@@ -14,6 +14,7 @@ declare -a IMPLS=()
 [[ -x perl/secrets-filter ]] && IMPLS+=(perl/secrets-filter)
 [[ -x go/secrets-filter ]] && IMPLS+=(go/secrets-filter)
 [[ -x bash/secrets-filter ]] && IMPLS+=(bash/secrets-filter)
+[[ -x ruby/secrets-filter ]] && IMPLS+=(ruby/secrets-filter)
 
 if [[ ${#IMPLS[@]} -eq 0 ]]; then
     echo "No implementations found!"
