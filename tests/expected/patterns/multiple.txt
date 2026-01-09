@@ -1,0 +1,2 @@
+# Multiple secrets on same line
+[REDACTED:GITHUB_PAT:ghp_36X] and [REDACTED:GITLAB_PAT:glpat-20X]

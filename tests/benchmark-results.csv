@@ -1,0 +1,4 @@
+implementation,mode,iterations,total_ms,per_call_ms,lines_per_sec
+rust,patterns,10,4004.908000000,400.49,19391
+rust,values,10,449.744000000,44.97,172676
+rust,all,10,4217.681000000,421.76,18412

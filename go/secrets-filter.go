@@ -14,6 +14,12 @@ import (
 	"unicode"
 )
 
+// Filter configuration
+type FilterConfig struct {
+	ValuesEnabled   bool
+	PatternsEnabled bool
+}
+
 const (
 	StateNormal = iota
 	StateInPrivateKey
@@ -249,6 +255,88 @@ func loadSecrets() map[string]string {
 	return secrets
 }
 
+// isFalsy checks if a string represents a falsy boolean value
+func isFalsy(val string) bool {
+	lower := strings.ToLower(strings.TrimSpace(val))
+	return lower == "0" || lower == "false" || lower == "no"
+}
+
+// parseFilterConfig parses filter configuration from CLI args and environment
+func parseFilterConfig() FilterConfig {
+	config := FilterConfig{
+		ValuesEnabled:   true,
+		PatternsEnabled: true,
+	}
+
+	// Check for --filter or -f in args
+	var filterArg string
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--filter=") {
+			filterArg = strings.TrimPrefix(arg, "--filter=")
+			break
+		} else if strings.HasPrefix(arg, "-f=") {
+			filterArg = strings.TrimPrefix(arg, "-f=")
+			break
+		} else if (arg == "--filter" || arg == "-f") && i+1 < len(args) {
+			filterArg = args[i+1]
+			break
+		}
+	}
+
+	if filterArg != "" {
+		// CLI flag overrides environment entirely
+		config.ValuesEnabled = false
+		config.PatternsEnabled = false
+
+		var validFound bool
+		var invalidFilters []string
+
+		parts := strings.Split(filterArg, ",")
+		for _, part := range parts {
+			filter := strings.ToLower(strings.TrimSpace(part))
+			switch filter {
+			case "values":
+				config.ValuesEnabled = true
+				validFound = true
+			case "patterns":
+				config.PatternsEnabled = true
+				validFound = true
+			case "all":
+				config.ValuesEnabled = true
+				config.PatternsEnabled = true
+				validFound = true
+			default:
+				if filter != "" {
+					invalidFilters = append(invalidFilters, part)
+				}
+			}
+		}
+
+		// Warn about invalid filters
+		for _, invalid := range invalidFilters {
+			fmt.Fprintf(os.Stderr, "secrets-filter: unknown filter '%s', ignoring\n", strings.TrimSpace(invalid))
+		}
+
+		// Error if no valid filters found
+		if !validFound {
+			fmt.Fprintln(os.Stderr, "secrets-filter: no valid filters specified")
+			os.Exit(1)
+		}
+	} else {
+		// Check environment variables
+		if val := os.Getenv("SECRETS_FILTER_VALUES"); val != "" && isFalsy(val) {
+			config.ValuesEnabled = false
+		}
+		if val := os.Getenv("SECRETS_FILTER_PATTERNS"); val != "" && isFalsy(val) {
+			config.PatternsEnabled = false
+		}
+	}
+
+	return config
+}
+
 // redactEnvValues replaces known secret values with [REDACTED:VAR_NAME:structure]
 func redactEnvValues(text string, secrets map[string]string) string {
 	if secrets == nil {
@@ -325,15 +413,26 @@ func redactPatterns(text string) string {
 	return text
 }
 
-// redactLine applies all redaction to a single line
-func redactLine(line string, secrets map[string]string) string {
-	line = redactEnvValues(line, secrets)
-	line = redactPatterns(line)
+// redactLine applies all redaction to a single line based on config
+func redactLine(line string, secrets map[string]string, config FilterConfig) string {
+	if config.ValuesEnabled && secrets != nil {
+		line = redactEnvValues(line, secrets)
+	}
+	if config.PatternsEnabled {
+		line = redactPatterns(line)
+	}
 	return line
 }
 
 func main() {
-	secrets := loadSecrets()
+	config := parseFilterConfig()
+
+	// Only load secrets if values filter is enabled
+	var secrets map[string]string
+	if config.ValuesEnabled {
+		secrets = loadSecrets()
+	}
+
 	state := StateNormal
 	var buffer []string
 
@@ -355,7 +454,7 @@ func main() {
 		if bytes.Contains([]byte(line), []byte{0}) {
 			// Flush buffer
 			for _, l := range buffer {
-				fmt.Print(redactLine(l, secrets))
+				fmt.Print(redactLine(l, secrets, config))
 			}
 			buffer = nil
 			// Passthrough this line and rest
@@ -370,7 +469,7 @@ func main() {
 				state = StateInPrivateKey
 				buffer = []string{line}
 			} else {
-				fmt.Print(redactLine(line, secrets))
+				fmt.Print(redactLine(line, secrets, config))
 			}
 
 		case StateInPrivateKey:
@@ -382,7 +481,7 @@ func main() {
 				state = StateNormal
 			} else if len(buffer) > MaxPrivateKeyBuffer {
 				for _, l := range buffer {
-					fmt.Print(redactLine(l, secrets))
+					fmt.Print(redactLine(l, secrets, config))
 				}
 				buffer = nil
 				state = StateNormal
@@ -397,6 +496,6 @@ func main() {
 
 	// EOF: flush remaining buffer
 	for _, l := range buffer {
-		fmt.Print(redactLine(l, secrets))
+		fmt.Print(redactLine(l, secrets, config))
 	}
 }

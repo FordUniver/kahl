@@ -1,0 +1,21 @@
+# Mixed content: both env values and pattern tokens
+# All secrets should be redacted with --filter=all
+
+# Env values
+Config token: [REDACTED:TEST_GITHUB_TOKEN:test_2A_5A_5A_10N]
+Database password: [REDACTED:SERVICE_PASSWORD:21X]
+
+# Pattern tokens
+GitHub PAT: [REDACTED:GITHUB_PAT:ghp_36X]
+GitLab PAT: [REDACTED:GITLAB_PAT:glpat-20X]
+AWS key: [REDACTED:AWS_ACCESS_KEY:20X]
+
+# Both on same line
+Auth: [REDACTED:TEST_SLACK_TOKEN:test_5A_5A_8N] with backup [REDACTED:STRIPE_SECRET:sk_4A_24A]
+
+# Nested in URL
+https://user:[REDACTED:GIT_CREDENTIAL:12X_3A_18X_2X_3X]@github.com/repo.git
+
+# Non-secrets (should pass through)
+Normal log line without secrets
+UUID: 550e8400-e29b-41d4-a716-446655440000

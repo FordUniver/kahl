@@ -1,0 +1,4 @@
+# OpenAI and Anthropic API key patterns
+[REDACTED:OPENAI_KEY:sk-...:51chars]
+[REDACTED:OPENAI_PROJECT_KEY:sk-4A-20X]
+[REDACTED:ANTHROPIC_KEY:sk-...:97chars]

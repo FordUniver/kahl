@@ -1,10 +1,105 @@
 // secrets-filter: Filter stdin for secrets, redact with labels
 // Build: cargo build --release
+//
+// Filter modes:
+//   --filter=values,patterns  (CLI, comma-separated, case-insensitive)
+//   SECRETS_FILTER_VALUES=0|false|no  (ENV, disables values filter)
+//   SECRETS_FILTER_PATTERNS=0|false|no  (ENV, disables patterns filter)
+//
+// Default: both enabled. CLI overrides ENV entirely.
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{self, BufRead, Write};
+
+#[derive(Debug, Clone, Copy)]
+struct FilterConfig {
+    values: bool,
+    patterns: bool,
+}
+
+impl Default for FilterConfig {
+    fn default() -> Self {
+        Self {
+            values: true,
+            patterns: true,
+        }
+    }
+}
+
+/// Check if a string value is falsy (0, false, no)
+fn is_falsy(val: &str) -> bool {
+    matches!(val.to_lowercase().as_str(), "0" | "false" | "no")
+}
+
+/// Parse filter configuration from CLI args and environment
+fn parse_filter_config() -> Result<FilterConfig, String> {
+    let args: Vec<String> = env::args().collect();
+
+    // Check for --filter=X or -f X in args
+    let mut cli_filter: Option<String> = None;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i].starts_with("--filter=") {
+            cli_filter = Some(args[i].strip_prefix("--filter=").unwrap().to_string());
+            break;
+        } else if args[i] == "-f" || args[i] == "--filter" {
+            if i + 1 < args.len() {
+                cli_filter = Some(args[i + 1].clone());
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    if let Some(filter_str) = cli_filter {
+        // CLI overrides ENV entirely
+        let mut values = false;
+        let mut patterns = false;
+        let mut valid_count = 0;
+
+        for part in filter_str.split(',') {
+            let part = part.trim().to_lowercase();
+            match part.as_str() {
+                "values" => {
+                    values = true;
+                    valid_count += 1;
+                }
+                "patterns" => {
+                    patterns = true;
+                    valid_count += 1;
+                }
+                "all" => {
+                    values = true;
+                    patterns = true;
+                    valid_count += 1;
+                }
+                "" => {} // ignore empty parts
+                unknown => {
+                    eprintln!("secrets-filter: unknown filter '{}', ignoring", unknown);
+                }
+            }
+        }
+
+        if valid_count == 0 {
+            return Err("secrets-filter: no valid filters specified".to_string());
+        }
+
+        Ok(FilterConfig { values, patterns })
+    } else {
+        // Use ENV variables
+        let values = env::var("SECRETS_FILTER_VALUES")
+            .map(|v| !is_falsy(&v))
+            .unwrap_or(true);
+
+        let patterns = env::var("SECRETS_FILTER_PATTERNS")
+            .map(|v| !is_falsy(&v))
+            .unwrap_or(true);
+
+        Ok(FilterConfig { values, patterns })
+    }
+}
 
 const STATE_NORMAL: u8 = 0;
 const STATE_IN_PRIVATE_KEY: u8 = 1;
@@ -244,26 +339,79 @@ fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[Context
     result
 }
 
-fn redact_line(line: &str, secrets: &HashMap<String, String>, patterns: &[Pattern], context_patterns: &[ContextPattern]) -> String {
-    let line = redact_env_values(line, secrets);
-    redact_patterns(&line, patterns, context_patterns)
+fn redact_line(
+    line: &str,
+    secrets: &HashMap<String, String>,
+    patterns: &[Pattern],
+    context_patterns: &[ContextPattern],
+    config: &FilterConfig,
+) -> String {
+    let mut result = line.to_string();
+    if config.values {
+        result = redact_env_values(&result, secrets);
+    }
+    if config.patterns {
+        result = redact_patterns(&result, patterns, context_patterns);
+    }
+    result
 }
 
-fn flush_buffer_redacted(buffer: &[String], secrets: &HashMap<String, String>, patterns: &[Pattern], context_patterns: &[ContextPattern]) {
+fn flush_buffer_redacted(
+    buffer: &[String],
+    secrets: &HashMap<String, String>,
+    patterns: &[Pattern],
+    context_patterns: &[ContextPattern],
+    config: &FilterConfig,
+) {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     for line in buffer {
-        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns));
+        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns, config));
     }
     let _ = handle.flush();
 }
 
 fn main() {
-    let secrets = load_secrets();
-    let patterns = build_patterns();
-    let context_patterns = build_context_patterns();
-    let private_key_begin = Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap();
-    let private_key_end = Regex::new(r"-----END [A-Z ]*PRIVATE KEY-----").unwrap();
+    // Parse filter configuration
+    let config = match parse_filter_config() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Conditionally load secrets (skip if values filter disabled)
+    let secrets = if config.values {
+        load_secrets()
+    } else {
+        HashMap::new()
+    };
+
+    // Conditionally compile patterns (skip if patterns filter disabled)
+    let patterns = if config.patterns {
+        build_patterns()
+    } else {
+        Vec::new()
+    };
+
+    let context_patterns = if config.patterns {
+        build_context_patterns()
+    } else {
+        Vec::new()
+    };
+
+    // Private key detection is part of patterns filter
+    let private_key_begin = if config.patterns {
+        Some(Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap())
+    } else {
+        None
+    };
+    let private_key_end = if config.patterns {
+        Some(Regex::new(r"-----END [A-Z ]*PRIVATE KEY-----").unwrap())
+    } else {
+        None
+    };
 
     let mut state = STATE_NORMAL;
     let mut buffer: Vec<String> = Vec::new();
@@ -280,7 +428,7 @@ fn main() {
 
         // Binary detection: null byte
         if line.contains('\0') {
-            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns);
+            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config);
             buffer.clear();
             // Passthrough this line and rest
             let _ = write!(stdout_handle, "{}", line);
@@ -293,24 +441,35 @@ fn main() {
 
         match state {
             STATE_NORMAL => {
-                if private_key_begin.is_match(&line) {
+                // Check for private key begin (only if patterns enabled)
+                let is_key_begin = private_key_begin
+                    .as_ref()
+                    .map(|re| re.is_match(&line))
+                    .unwrap_or(false);
+
+                if is_key_begin {
                     state = STATE_IN_PRIVATE_KEY;
                     buffer = vec![line];
                 } else {
-                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns));
+                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns, &config));
                     let _ = stdout_handle.flush();
                 }
             }
             STATE_IN_PRIVATE_KEY => {
                 buffer.push(line.clone());
 
-                if private_key_end.is_match(&line) {
+                let is_key_end = private_key_end
+                    .as_ref()
+                    .map(|re| re.is_match(&line))
+                    .unwrap_or(false);
+
+                if is_key_end {
                     let _ = writeln!(stdout_handle, "[REDACTED:PRIVATE_KEY:multiline]");
                     let _ = stdout_handle.flush();
                     buffer.clear();
                     state = STATE_NORMAL;
                 } else if buffer.len() > MAX_PRIVATE_KEY_BUFFER {
-                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns);
+                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config);
                     buffer.clear();
                     state = STATE_NORMAL;
                 }
@@ -320,5 +479,5 @@ fn main() {
     }
 
     // EOF: flush remaining buffer
-    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns);
+    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config);
 }

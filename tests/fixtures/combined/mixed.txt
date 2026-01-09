@@ -1,0 +1,21 @@
+# Mixed content: both env values and pattern tokens
+# All secrets should be redacted with --filter=all
+
+# Env values
+Config token: test_gh_token_value_1234567890
+Database password: servicepassword123!@#
+
+# Pattern tokens
+GitHub PAT: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+GitLab PAT: glpat-abcdefghij1234567890
+AWS key: AKIAIOSFODNN7EXAMPLE
+
+# Both on same line
+Auth: test_slack_token_99887766 with backup sk_live_abcdefghijklmnopqrstuvwx
+
+# Nested in URL
+https://user:myappsecret_value_here@github.com/repo.git
+
+# Non-secrets (should pass through)
+Normal log line without secrets
+UUID: 550e8400-e29b-41d4-a716-446655440000

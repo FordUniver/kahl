@@ -1,0 +1,3 @@
+# Boundary tests - too short (should NOT be redacted)
+ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+glpat-aaaaaaaaaaaaaaaaaaa

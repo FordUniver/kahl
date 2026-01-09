@@ -1,0 +1,6 @@
+# Values that are too short (< 8 chars) should NOT be redacted
+# even if they match env var names
+
+# These are not in env.yaml but demonstrate the length filter
+short: abc
+tiny: 1234567

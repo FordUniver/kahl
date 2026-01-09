@@ -1,0 +1,3 @@
+# Boundary tests - exact length requirements
+ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+glpat-aaaaaaaaaaaaaaaaaaaa

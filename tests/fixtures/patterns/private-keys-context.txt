@@ -1,0 +1,6 @@
+before
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA
+data
+-----END RSA PRIVATE KEY-----
+after

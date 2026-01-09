@@ -1,8 +1,113 @@
 // secrets-filter: Filter stdin for secrets, redact with labels
 // Streaming mode with state machine for private keys
 // Build: swiftc -O -o secrets-filter main.swift
+//
+// Filter modes:
+//   --filter=values    - redact known secret values from environment
+//   --filter=patterns  - redact regex patterns (token formats)
+//   --filter=all       - shorthand for both (default)
+//
+// Environment variables (override with --filter):
+//   SECRETS_FILTER_VALUES=0|false|no    - disable values filter
+//   SECRETS_FILTER_PATTERNS=0|false|no  - disable patterns filter
 
 import Foundation
+
+// Filter configuration
+struct FilterConfig {
+    var valuesEnabled: Bool = true
+    var patternsEnabled: Bool = true
+}
+
+// Check if a value is falsy (0, false, no)
+func isFalsy(_ value: String) -> Bool {
+    let lower = value.lowercased()
+    return ["0", "false", "no"].contains(lower)
+}
+
+// Parse --filter CLI arguments
+// Returns: (config, hadValidFilter) or nil if error (all invalid filters)
+func parseFilterArgs() -> (FilterConfig, Bool)? {
+    var config = FilterConfig(valuesEnabled: false, patternsEnabled: false)
+    var hadFilterArg = false
+    var hadValidFilter = false
+
+    let args = CommandLine.arguments
+    for arg in args.dropFirst() {  // Skip program name
+        var filterValue: String? = nil
+
+        if arg.hasPrefix("--filter=") {
+            filterValue = String(arg.dropFirst("--filter=".count))
+        } else if arg == "-f" {
+            // Find the next argument
+            if let idx = args.firstIndex(of: arg), idx + 1 < args.count {
+                filterValue = args[idx + 1]
+            }
+        } else if arg.hasPrefix("-f") && arg.count > 2 {
+            // -fvalue format (no space)
+            filterValue = String(arg.dropFirst(2))
+        }
+
+        guard let value = filterValue else { continue }
+        hadFilterArg = true
+
+        // Parse comma-separated filters
+        let filters = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+
+        for filter in filters {
+            switch filter {
+            case "all":
+                config.valuesEnabled = true
+                config.patternsEnabled = true
+                hadValidFilter = true
+            case "values":
+                config.valuesEnabled = true
+                hadValidFilter = true
+            case "patterns":
+                config.patternsEnabled = true
+                hadValidFilter = true
+            default:
+                fputs("secrets-filter: unknown filter '\(filter)', ignoring\n", stderr)
+            }
+        }
+    }
+
+    if hadFilterArg && !hadValidFilter {
+        fputs("secrets-filter: no valid filters specified\n", stderr)
+        return nil
+    }
+
+    return (config, hadFilterArg)
+}
+
+// Parse environment variables for filter config
+func parseFilterEnv() -> FilterConfig {
+    var config = FilterConfig()
+
+    if let value = ProcessInfo.processInfo.environment["SECRETS_FILTER_VALUES"], isFalsy(value) {
+        config.valuesEnabled = false
+    }
+    if let value = ProcessInfo.processInfo.environment["SECRETS_FILTER_PATTERNS"], isFalsy(value) {
+        config.patternsEnabled = false
+    }
+
+    return config
+}
+
+// Get filter configuration: CLI overrides ENV, ENV overrides defaults
+func getFilterConfig() -> FilterConfig? {
+    if let (config, hadFilterArg) = parseFilterArgs() {
+        if hadFilterArg {
+            return config
+        }
+        // No filter arg, fall through to env
+    } else {
+        // Error: all invalid filters
+        return nil
+    }
+
+    return parseFilterEnv()
+}
 
 let STATE_NORMAL = 0
 let STATE_IN_PRIVATE_KEY = 1
@@ -226,31 +331,43 @@ func redactPatterns(_ text: String) -> String {
     return result
 }
 
-// Redact a single line
-func redactLine(_ line: String, _ secrets: [String: String]) -> String {
-    var result = redactEnvValues(line, secrets)
-    result = redactPatterns(result)
+// Redact a single line based on filter config
+func redactLine(_ line: String, _ secrets: [String: String], _ config: FilterConfig) -> String {
+    var result = line
+    if config.valuesEnabled {
+        result = redactEnvValues(result, secrets)
+    }
+    if config.patternsEnabled {
+        result = redactPatterns(result)
+    }
     return result
 }
 
 // Flush buffer with redaction
-func flushBufferRedacted(_ buffer: [String], _ secrets: [String: String]) {
+func flushBufferRedacted(_ buffer: [String], _ secrets: [String: String], _ config: FilterConfig) {
     for line in buffer {
-        print(redactLine(line, secrets), terminator: "")
+        print(redactLine(line, secrets, config), terminator: "")
         fflush(stdout)
     }
 }
 
 // Main
 func main() {
-    let secrets = loadSecrets()
+    // Get filter configuration (CLI overrides ENV)
+    guard let config = getFilterConfig() else {
+        exit(1)  // Error already printed by getFilterConfig
+    }
+
+    // Load secrets only if values filter is enabled
+    let secrets: [String: String] = config.valuesEnabled ? loadSecrets() : [:]
+
     var state = STATE_NORMAL
     var buffer: [String] = []
 
     while let line = readLine(strippingNewline: false) {
         // Binary detection: null byte
         if line.contains("\0") {
-            flushBufferRedacted(buffer, secrets)
+            flushBufferRedacted(buffer, secrets, config)
             buffer = []
             print(line, terminator: "")
             // Passthrough rest
@@ -261,11 +378,12 @@ func main() {
         }
 
         if state == STATE_NORMAL {
-            if line.contains(privateKeyBegin) {
+            // Only detect private key blocks if patterns filter is enabled
+            if config.patternsEnabled && line.contains(privateKeyBegin) {
                 state = STATE_IN_PRIVATE_KEY
                 buffer = [line]
             } else {
-                print(redactLine(line, secrets), terminator: "")
+                print(redactLine(line, secrets, config), terminator: "")
                 fflush(stdout)
             }
         } else {
@@ -277,7 +395,7 @@ func main() {
                 buffer = []
                 state = STATE_NORMAL
             } else if buffer.count > MAX_PRIVATE_KEY_BUFFER {
-                flushBufferRedacted(buffer, secrets)
+                flushBufferRedacted(buffer, secrets, config)
                 buffer = []
                 state = STATE_NORMAL
             }
@@ -286,7 +404,7 @@ func main() {
 
     // EOF: flush remaining buffer
     if !buffer.isEmpty {
-        flushBufferRedacted(buffer, secrets)
+        flushBufferRedacted(buffer, secrets, config)
     }
 }
 

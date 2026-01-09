@@ -1,0 +1,2 @@
+# GitLab token patterns
+[REDACTED:GITLAB_PAT:glpat-20X]

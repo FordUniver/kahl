@@ -1,0 +1,3 @@
+# Payment provider patterns
+sk_live_abcdefghijklmnopqrstuvwx
+sk_test_abcdefghijklmnopqrstuvwx

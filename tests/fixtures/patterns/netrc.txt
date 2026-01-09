@@ -1,0 +1,3 @@
+# netrc/authinfo patterns
+machine github.com login user password supersecret123
+machine gitlab.com login admin passwd anothersecret99

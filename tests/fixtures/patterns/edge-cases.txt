@@ -1,0 +1,5 @@
+# Edge cases - things that should NOT be redacted
+hello world
+id: 550e8400-e29b-41d4-a716-446655440000
+commit abc123def456789012345678901234567890
+sk-shortkey123

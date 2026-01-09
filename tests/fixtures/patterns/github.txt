@@ -1,0 +1,6 @@
+# GitHub token patterns
+token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+github_pat_11ABCDEFGH0123456789_abcdefghijklmnop
+gho_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+ghs_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+ghr_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
