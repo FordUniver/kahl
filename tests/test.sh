@@ -398,6 +398,24 @@ run_edge_tests() {
             print_result fail "$impl" "edge/multiple-secrets"
             record_fail
         fi
+
+        # Binary data with invalid UTF-8 + NUL byte (passthrough test)
+        # Input: 3 invalid UTF-8 bytes + NUL + "binary\n" = 11 bytes total
+        # Uses temp files because bash command substitution strips NUL bytes
+        local binary_tmp="/tmp/secrets-filter-binary-test-$$"
+        printf '\x80\x81\x82\x00binary\n' > "$binary_tmp.in"
+        "$ROOT_DIR/$impl/secrets-filter" --filter=patterns < "$binary_tmp.in" > "$binary_tmp.out" 2>/dev/null
+        local result_len
+        result_len=$(wc -c < "$binary_tmp.out" | tr -d ' ')
+        # Should pass through unchanged (11 bytes) and contain "binary"
+        if [[ $result_len -eq 11 ]] && grep -q "binary" "$binary_tmp.out" 2>/dev/null; then
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "edge/binary-utf8-passthrough"
+            record_pass
+        else
+            print_result fail "$impl" "edge/binary-utf8-passthrough (got $result_len bytes)"
+            record_fail
+        fi
+        rm -f "$binary_tmp.in" "$binary_tmp.out"
     done
     [[ $QUIET -eq 0 ]] && echo
 }
