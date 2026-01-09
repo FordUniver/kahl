@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -202,34 +200,48 @@ func describeStructure(s string) string {
 	return classifySegment(s)
 }
 
-// loadSecretsFromDotfiles loads secret variable names and values from dotfiles
-func loadSecretsFromDotfiles() map[string]string {
-	dotfiles := os.Getenv("DOTFILES")
-	if dotfiles == "" {
-		home := os.Getenv("HOME")
-		dotfiles = filepath.Join(home, ".dotfiles")
-	}
-	secretsDir := filepath.Join(dotfiles, "secrets")
-
-	if _, err := os.Stat(secretsDir); os.IsNotExist(err) {
-		return nil
-	}
-
-	cmd := exec.Command("grep", "-rh", `^[A-Z_][A-Z0-9_]*=`, secretsDir)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil
-	}
-
+// loadSecrets loads secret values from environment variables
+func loadSecrets() map[string]string {
 	secrets := make(map[string]string)
-	varPattern := regexp.MustCompile(`^([A-Z_][A-Z0-9_]*)=`)
 
-	for _, line := range strings.Split(string(output), "\n") {
-		matches := varPattern.FindStringSubmatch(line)
-		if len(matches) >= 2 {
-			varName := matches[1]
-			if val := os.Getenv(varName); val != "" {
-				secrets[varName] = val
+	// Explicit env var names known to contain secrets
+	explicit := map[string]bool{
+		"GITHUB_TOKEN": true, "GH_TOKEN": true, "GITLAB_TOKEN": true, "GLAB_TOKEN": true, "BITBUCKET_TOKEN": true,
+		"AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "AZURE_CLIENT_SECRET": true,
+		"OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "CLAUDE_API_KEY": true,
+		"SLACK_TOKEN": true, "SLACK_BOT_TOKEN": true, "SLACK_WEBHOOK_URL": true,
+		"NPM_TOKEN": true, "PYPI_TOKEN": true, "DOCKER_PASSWORD": true,
+		"DATABASE_URL": true, "REDIS_URL": true, "MONGODB_URI": true,
+		"JWT_SECRET": true, "SESSION_SECRET": true, "ENCRYPTION_KEY": true,
+		"SENDGRID_API_KEY": true, "TWILIO_AUTH_TOKEN": true, "STRIPE_SECRET_KEY": true,
+	}
+
+	// Suffixes that indicate secret env vars
+	patterns := []string{"_SECRET", "_PASSWORD", "_TOKEN", "_API_KEY", "_PRIVATE_KEY", "_AUTH", "_CREDENTIAL"}
+
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		name, value := parts[0], parts[1]
+
+		// Skip empty values and values shorter than 8 characters
+		if len(value) < 8 {
+			continue
+		}
+
+		// Check explicit names
+		if explicit[name] {
+			secrets[name] = value
+			continue
+		}
+
+		// Check suffix patterns
+		for _, suffix := range patterns {
+			if strings.HasSuffix(name, suffix) {
+				secrets[name] = value
+				break
 			}
 		}
 	}
@@ -321,7 +333,7 @@ func redactLine(line string, secrets map[string]string) string {
 }
 
 func main() {
-	secrets := loadSecretsFromDotfiles()
+	secrets := loadSecrets()
 	state := StateNormal
 	var buffer []string
 

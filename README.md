@@ -5,7 +5,7 @@ Streaming filter that redacts secrets from stdin before they appear in conversat
 ## How It Works
 
 Two-layer detection:
-1. **Env-based**: Variables from `$DOTFILES/secrets/` with precise labels
+1. **Env-based**: Known secret env vars (explicit names + suffix patterns like `*_TOKEN`, `*_SECRET`)
 2. **Pattern-based**: Known token formats (GitHub, Slack, AWS, OpenAI, etc.)
 
 ## Streaming Architecture

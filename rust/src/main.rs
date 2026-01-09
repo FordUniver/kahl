@@ -2,11 +2,9 @@
 // Build: cargo build --release
 
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{self, BufRead, Write};
-use std::path::Path;
-use std::process::Command;
 
 const STATE_NORMAL: u8 = 0;
 const STATE_IN_PRIVATE_KEY: u8 = 1;
@@ -151,38 +149,29 @@ fn describe_structure(s: &str) -> String {
     classify_segment(s)
 }
 
-fn load_secrets_from_dotfiles() -> HashMap<String, String> {
-    let dotfiles = env::var("DOTFILES").unwrap_or_else(|_| {
-        let home = env::var("HOME").unwrap_or_default();
-        format!("{}/.dotfiles", home)
-    });
-    let secrets_dir = format!("{}/secrets", dotfiles);
+fn load_secrets() -> HashMap<String, String> {
+    let explicit: HashSet<&str> = [
+        "GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN", "BITBUCKET_TOKEN",
+        "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AZURE_CLIENT_SECRET",
+        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
+        "SLACK_TOKEN", "SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL",
+        "NPM_TOKEN", "PYPI_TOKEN", "DOCKER_PASSWORD",
+        "DATABASE_URL", "REDIS_URL", "MONGODB_URI",
+        "JWT_SECRET", "SESSION_SECRET", "ENCRYPTION_KEY",
+        "SENDGRID_API_KEY", "TWILIO_AUTH_TOKEN", "STRIPE_SECRET_KEY",
+    ].iter().cloned().collect();
 
-    if !Path::new(&secrets_dir).is_dir() {
-        return HashMap::new();
-    }
+    let patterns = ["_SECRET", "_PASSWORD", "_TOKEN", "_API_KEY", "_PRIVATE_KEY", "_AUTH", "_CREDENTIAL"];
 
-    let output = match Command::new("grep")
-        .args(["-rh", r"^[A-Z_][A-Z0-9_]*=", &secrets_dir])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return HashMap::new(),
-    };
-
-    let var_pattern = Regex::new(r"^([A-Z_][A-Z0-9_]*)=").unwrap();
     let mut secrets = HashMap::new();
 
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        if let Some(caps) = var_pattern.captures(line) {
-            if let Some(var_match) = caps.get(1) {
-                let var_name = var_match.as_str();
-                if let Ok(val) = env::var(var_name) {
-                    if !val.is_empty() {
-                        secrets.insert(var_name.to_string(), val);
-                    }
-                }
-            }
+    for (name, value) in env::vars() {
+        if value.len() < 8 {
+            continue;
+        }
+
+        if explicit.contains(name.as_str()) || patterns.iter().any(|p| name.ends_with(p)) {
+            secrets.insert(name, value);
         }
     }
 
@@ -270,7 +259,7 @@ fn flush_buffer_redacted(buffer: &[String], secrets: &HashMap<String, String>, p
 }
 
 fn main() {
-    let secrets = load_secrets_from_dotfiles();
+    let secrets = load_secrets();
     let patterns = build_patterns();
     let context_patterns = build_context_patterns();
     let private_key_begin = Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap();
