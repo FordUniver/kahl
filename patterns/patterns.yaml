@@ -1,0 +1,168 @@
+# secrets-filter patterns - single source of truth
+# All implementations generate their pattern definitions from this file.
+#
+# Pattern types:
+# - patterns: Direct regex matches (no context needed)
+# - context_patterns: Require prefix context (lookbehind or capture group)
+# - special_patterns: Complex patterns with multiple capture groups
+#
+# Order matters: more specific patterns should come first.
+
+version: 1
+
+constants:
+  long_threshold: 50
+  max_private_key_buffer: 100
+
+# Direct patterns (order: more specific first)
+# These can be matched directly without context
+patterns:
+  # GitHub tokens
+  - pattern: 'ghp_[A-Za-z0-9]{36}'
+    label: GITHUB_PAT
+  - pattern: 'gho_[A-Za-z0-9]{36}'
+    label: GITHUB_OAUTH
+  - pattern: 'ghs_[A-Za-z0-9]{36}'
+    label: GITHUB_SERVER
+  - pattern: 'ghr_[A-Za-z0-9]{36}'
+    label: GITHUB_REFRESH
+  - pattern: 'github_pat_[A-Za-z0-9_]{22,}'
+    label: GITHUB_PAT
+
+  # GitLab tokens
+  - pattern: 'glpat-[A-Za-z0-9_-]{20,}'
+    label: GITLAB_PAT
+
+  # Slack tokens
+  - pattern: 'xoxb-[0-9]+-[0-9A-Za-z-]+'
+    label: SLACK_BOT
+  - pattern: 'xoxp-[0-9]+-[0-9A-Za-z-]+'
+    label: SLACK_USER
+  - pattern: 'xoxa-[0-9]+-[0-9A-Za-z-]+'
+    label: SLACK_APP
+  - pattern: 'xoxs-[0-9]+-[0-9A-Za-z-]+'
+    label: SLACK_SESSION
+
+  # OpenAI / Anthropic
+  - pattern: 'sk-[A-Za-z0-9]{48}'
+    label: OPENAI_KEY
+  - pattern: 'sk-proj-[A-Za-z0-9_-]{20,}'
+    label: OPENAI_PROJECT_KEY
+  - pattern: 'sk-ant-[A-Za-z0-9-]{90,}'
+    label: ANTHROPIC_KEY
+
+  # AWS
+  - pattern: 'AKIA[A-Z0-9]{16}'
+    label: AWS_ACCESS_KEY
+
+  # Google Cloud
+  - pattern: 'AIza[A-Za-z0-9_-]{35}'
+    label: GOOGLE_API_KEY
+
+  # age encryption
+  - pattern: 'AGE-SECRET-KEY-[A-Z0-9]{59}'
+    label: AGE_SECRET_KEY
+
+  # Stripe
+  - pattern: 'sk_live_[A-Za-z0-9]{24,}'
+    label: STRIPE_SECRET
+  - pattern: 'sk_test_[A-Za-z0-9]{24,}'
+    label: STRIPE_TEST
+  - pattern: 'pk_live_[A-Za-z0-9]{24,}'
+    label: STRIPE_PUBLISHABLE
+
+  # Twilio
+  - pattern: 'SK[a-f0-9]{32}'
+    label: TWILIO_KEY
+
+  # SendGrid
+  - pattern: 'SG\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+    label: SENDGRID_KEY
+
+  # npm / PyPI
+  - pattern: 'npm_[A-Za-z0-9]{36}'
+    label: NPM_TOKEN
+  - pattern: 'pypi-[A-Za-z0-9_-]{100,}'
+    label: PYPI_TOKEN
+
+  # JWT tokens (base64url header.payload.signature)
+  - pattern: 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+    label: JWT_TOKEN
+
+  # Private keys (multiline - handled by state machine in streaming mode)
+  # This pattern is for batch mode fallback only
+  - pattern: '-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----'
+    label: PRIVATE_KEY
+    multiline: true
+
+# Context patterns require a prefix before the secret value
+# Languages with lookbehind: (?<=prefix)value_pattern
+# Languages without: (prefix)(value_pattern) with secret in group 2
+context_patterns:
+  # netrc/authinfo passwords
+  - prefix: 'password '
+    value: '[^\s]+'
+    label: NETRC_PASSWORD
+  - prefix: 'passwd '
+    value: '[^\s]+'
+    label: NETRC_PASSWORD
+
+  # Generic key=value patterns (lowercase)
+  - prefix: 'password='
+    value: '[^\s,;"''\}\[\]]+'
+    label: PASSWORD_VALUE
+  - prefix: 'password:'
+    value: '\s*[^\s,;"''\}\[\]]+'
+    label: PASSWORD_VALUE
+  - prefix: 'secret='
+    value: '[^\s,;"''\}\[\]]+'
+    label: SECRET_VALUE
+  - prefix: 'secret:'
+    value: '\s*[^\s,;"''\}\[\]]+'
+    label: SECRET_VALUE
+  - prefix: 'token='
+    value: '[^\s,;"''\}\[\]]+'
+    label: TOKEN_VALUE
+  - prefix: 'token:'
+    value: '\s*[^\s,;"''\}\[\]]+'
+    label: TOKEN_VALUE
+
+  # Generic key=value patterns (capitalized)
+  - prefix: 'Password='
+    value: '[^\s,;"''\}\[\]]+'
+    label: PASSWORD_VALUE
+  - prefix: 'Password:'
+    value: '\s*[^\s,;"''\}\[\]]+'
+    label: PASSWORD_VALUE
+  - prefix: 'Secret='
+    value: '[^\s,;"''\}\[\]]+'
+    label: SECRET_VALUE
+  - prefix: 'Secret:'
+    value: '\s*[^\s,;"''\}\[\]]+'
+    label: SECRET_VALUE
+  - prefix: 'Token='
+    value: '[^\s,;"''\}\[\]]+'
+    label: TOKEN_VALUE
+  - prefix: 'Token:'
+    value: '\s*[^\s,;"''\}\[\]]+'
+    label: TOKEN_VALUE
+
+# Special patterns with multiple capture groups
+# All languages use capture groups for these
+special_patterns:
+  # Git credential URLs: ://user:password@ -> ://user:[REDACTED]@
+  git_credential:
+    pattern: '(://[^:]+:)([^@]+)(@)'
+    label: GIT_CREDENTIAL
+    secret_group: 2
+
+  # Docker config auth: "auth": "base64" -> "auth": "[REDACTED]"
+  docker_auth:
+    pattern: '("auth":\s*")([A-Za-z0-9+/=]{20,})(")'
+    label: DOCKER_AUTH
+    secret_group: 2
+
+# Private key markers (for streaming state machine)
+private_key:
+  begin: '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  end: '-----END [A-Z ]*PRIVATE KEY-----'

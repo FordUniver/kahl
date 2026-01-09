@@ -8,6 +8,9 @@
 //
 // Default: both enabled. CLI overrides ENV entirely.
 
+mod patterns_gen;
+use patterns_gen::*;
+
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -103,8 +106,7 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
 
 const STATE_NORMAL: u8 = 0;
 const STATE_IN_PRIVATE_KEY: u8 = 1;
-const MAX_PRIVATE_KEY_BUFFER: usize = 100;
-const LONG_THRESHOLD: usize = 50;
+// MAX_PRIVATE_KEY_BUFFER and LONG_THRESHOLD come from patterns_gen
 
 struct Pattern {
     regex: Regex,
@@ -118,76 +120,24 @@ struct ContextPattern {
 }
 
 fn build_patterns() -> Vec<Pattern> {
-    vec![
-        // GitHub
-        Pattern { regex: Regex::new(r"ghp_[A-Za-z0-9]{36}").unwrap(), label: "GITHUB_PAT" },
-        Pattern { regex: Regex::new(r"gho_[A-Za-z0-9]{36}").unwrap(), label: "GITHUB_OAUTH" },
-        Pattern { regex: Regex::new(r"ghs_[A-Za-z0-9]{36}").unwrap(), label: "GITHUB_SERVER" },
-        Pattern { regex: Regex::new(r"ghr_[A-Za-z0-9]{36}").unwrap(), label: "GITHUB_REFRESH" },
-        Pattern { regex: Regex::new(r"github_pat_[A-Za-z0-9_]{22,}").unwrap(), label: "GITHUB_PAT" },
-
-        // GitLab
-        Pattern { regex: Regex::new(r"glpat-[A-Za-z0-9_-]{20,}").unwrap(), label: "GITLAB_PAT" },
-
-        // Slack
-        Pattern { regex: Regex::new(r"xoxb-[0-9]+-[0-9A-Za-z-]+").unwrap(), label: "SLACK_BOT" },
-        Pattern { regex: Regex::new(r"xoxp-[0-9]+-[0-9A-Za-z-]+").unwrap(), label: "SLACK_USER" },
-        Pattern { regex: Regex::new(r"xoxa-[0-9]+-[0-9A-Za-z-]+").unwrap(), label: "SLACK_APP" },
-        Pattern { regex: Regex::new(r"xoxs-[0-9]+-[0-9A-Za-z-]+").unwrap(), label: "SLACK_SESSION" },
-
-        // OpenAI / Anthropic
-        Pattern { regex: Regex::new(r"sk-[A-Za-z0-9]{48}").unwrap(), label: "OPENAI_KEY" },
-        Pattern { regex: Regex::new(r"sk-proj-[A-Za-z0-9_-]{20,}").unwrap(), label: "OPENAI_PROJECT_KEY" },
-        Pattern { regex: Regex::new(r"sk-ant-[A-Za-z0-9-]{90,}").unwrap(), label: "ANTHROPIC_KEY" },
-
-        // AWS
-        Pattern { regex: Regex::new(r"AKIA[A-Z0-9]{16}").unwrap(), label: "AWS_ACCESS_KEY" },
-
-        // Google Cloud
-        Pattern { regex: Regex::new(r"AIza[A-Za-z0-9_-]{35}").unwrap(), label: "GOOGLE_API_KEY" },
-
-        // age encryption
-        Pattern { regex: Regex::new(r"AGE-SECRET-KEY-[A-Z0-9]{59}").unwrap(), label: "AGE_SECRET_KEY" },
-
-        // Stripe
-        Pattern { regex: Regex::new(r"sk_live_[A-Za-z0-9]{24,}").unwrap(), label: "STRIPE_SECRET" },
-        Pattern { regex: Regex::new(r"sk_test_[A-Za-z0-9]{24,}").unwrap(), label: "STRIPE_TEST" },
-        Pattern { regex: Regex::new(r"pk_live_[A-Za-z0-9]{24,}").unwrap(), label: "STRIPE_PUBLISHABLE" },
-
-        // Twilio
-        Pattern { regex: Regex::new(r"SK[a-f0-9]{32}").unwrap(), label: "TWILIO_KEY" },
-
-        // SendGrid
-        Pattern { regex: Regex::new(r"SG\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap(), label: "SENDGRID_KEY" },
-
-        // npm / PyPI
-        Pattern { regex: Regex::new(r"npm_[A-Za-z0-9]{36}").unwrap(), label: "NPM_TOKEN" },
-        Pattern { regex: Regex::new(r"pypi-[A-Za-z0-9_-]{100,}").unwrap(), label: "PYPI_TOKEN" },
-
-        // JWT tokens
-        Pattern { regex: Regex::new(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap(), label: "JWT_TOKEN" },
-    ]
+    PATTERNS
+        .iter()
+        .map(|(regex_str, label)| Pattern {
+            regex: Regex::new(regex_str).unwrap(),
+            label,
+        })
+        .collect()
 }
 
 fn build_context_patterns() -> Vec<ContextPattern> {
-    vec![
-        // netrc/authinfo
-        ContextPattern { regex: Regex::new(r"(password |passwd )([^\s]+)").unwrap(), label: "NETRC_PASSWORD", group: 2 },
-
-        // Generic key=value patterns
-        ContextPattern { regex: Regex::new(r#"(password=)([^\s,;"'\}\[\]]+)"#).unwrap(), label: "PASSWORD_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(password:)(\s*[^\s,;"'\}\[\]]+)"#).unwrap(), label: "PASSWORD_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(Password=)([^\s,;"'\}\[\]]+)"#).unwrap(), label: "PASSWORD_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(Password:)(\s*[^\s,;"'\}\[\]]+)"#).unwrap(), label: "PASSWORD_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(secret=)([^\s,;"'\}\[\]]+)"#).unwrap(), label: "SECRET_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(secret:)(\s*[^\s,;"'\}\[\]]+)"#).unwrap(), label: "SECRET_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(Secret=)([^\s,;"'\}\[\]]+)"#).unwrap(), label: "SECRET_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(Secret:)(\s*[^\s,;"'\}\[\]]+)"#).unwrap(), label: "SECRET_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(token=)([^\s,;"'\}\[\]]+)"#).unwrap(), label: "TOKEN_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(token:)(\s*[^\s,;"'\}\[\]]+)"#).unwrap(), label: "TOKEN_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(Token=)([^\s,;"'\}\[\]]+)"#).unwrap(), label: "TOKEN_VALUE", group: 2 },
-        ContextPattern { regex: Regex::new(r#"(Token:)(\s*[^\s,;"'\}\[\]]+)"#).unwrap(), label: "TOKEN_VALUE", group: 2 },
-    ]
+    CONTEXT_PATTERNS
+        .iter()
+        .map(|(regex_str, label, group)| ContextPattern {
+            regex: Regex::new(regex_str).unwrap(),
+            label,
+            group: *group,
+        })
+        .collect()
 }
 
 fn classify_segment(s: &str) -> String {
@@ -245,18 +195,7 @@ fn describe_structure(s: &str) -> String {
 }
 
 fn load_secrets() -> HashMap<String, String> {
-    let explicit: HashSet<&str> = [
-        "GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN", "BITBUCKET_TOKEN",
-        "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AZURE_CLIENT_SECRET",
-        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
-        "SLACK_TOKEN", "SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL",
-        "NPM_TOKEN", "PYPI_TOKEN", "DOCKER_PASSWORD",
-        "DATABASE_URL", "REDIS_URL", "MONGODB_URI",
-        "JWT_SECRET", "SESSION_SECRET", "ENCRYPTION_KEY",
-        "SENDGRID_API_KEY", "TWILIO_AUTH_TOKEN", "STRIPE_SECRET_KEY",
-    ].iter().cloned().collect();
-
-    let patterns = ["_SECRET", "_PASSWORD", "_TOKEN", "_API_KEY", "_PRIVATE_KEY", "_AUTH", "_CREDENTIAL"];
+    let explicit: HashSet<&str> = EXPLICIT_ENV_VARS.iter().cloned().collect();
 
     let mut secrets = HashMap::new();
 
@@ -265,7 +204,7 @@ fn load_secrets() -> HashMap<String, String> {
             continue;
         }
 
-        if explicit.contains(name.as_str()) || patterns.iter().any(|p| name.ends_with(p)) {
+        if explicit.contains(name.as_str()) || ENV_SUFFIXES.iter().any(|p| name.ends_with(p)) {
             secrets.insert(name, value);
         }
     }
@@ -317,23 +256,23 @@ fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[Context
     }
 
     // Git credential URLs: ://user:password@ -> ://user:[REDACTED]@
-    let git_cred_pattern = Regex::new(r"(://[^:]+:)([^@]+)(@)").unwrap();
+    let git_cred_pattern = Regex::new(GIT_CREDENTIAL_PATTERN.pattern).unwrap();
     result = git_cred_pattern.replace_all(&result, |caps: &regex::Captures| {
         let prefix = caps.get(1).map_or("", |m| m.as_str());
-        let password = caps.get(2).map_or("", |m| m.as_str());
+        let password = caps.get(GIT_CREDENTIAL_PATTERN.secret_group).map_or("", |m| m.as_str());
         let suffix = caps.get(3).map_or("", |m| m.as_str());
         let structure = describe_structure(password);
-        format!("{}[REDACTED:GIT_CREDENTIAL:{}]{}", prefix, structure, suffix)
+        format!("{}[REDACTED:{}:{}]{}", prefix, GIT_CREDENTIAL_PATTERN.label, structure, suffix)
     }).to_string();
 
     // Docker config auth: "auth": "base64" -> "auth": "[REDACTED]"
-    let docker_auth_pattern = Regex::new(r#"("auth":\s*")([A-Za-z0-9+/=]{20,})(")"#).unwrap();
+    let docker_auth_pattern = Regex::new(DOCKER_AUTH_PATTERN.pattern).unwrap();
     result = docker_auth_pattern.replace_all(&result, |caps: &regex::Captures| {
         let prefix = caps.get(1).map_or("", |m| m.as_str());
-        let auth = caps.get(2).map_or("", |m| m.as_str());
+        let auth = caps.get(DOCKER_AUTH_PATTERN.secret_group).map_or("", |m| m.as_str());
         let suffix = caps.get(3).map_or("", |m| m.as_str());
         let structure = describe_structure(auth);
-        format!("{}[REDACTED:DOCKER_AUTH:{}]{}", prefix, structure, suffix)
+        format!("{}[REDACTED:{}:{}]{}", prefix, DOCKER_AUTH_PATTERN.label, structure, suffix)
     }).to_string();
 
     result
@@ -403,12 +342,12 @@ fn main() {
 
     // Private key detection is part of patterns filter
     let private_key_begin = if config.patterns {
-        Some(Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap())
+        Some(Regex::new(PRIVATE_KEY_BEGIN).unwrap())
     } else {
         None
     };
     let private_key_end = if config.patterns {
-        Some(Regex::new(r"-----END [A-Z ]*PRIVATE KEY-----").unwrap())
+        Some(Regex::new(PRIVATE_KEY_END).unwrap())
     } else {
         None
     };

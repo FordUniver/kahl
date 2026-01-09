@@ -1,5 +1,5 @@
 // secrets-filter: Filter stdin for secrets, redact with labels
-// Build: go build -o secrets-filter secrets-filter.go
+// Build: go build -o secrets-filter secrets-filter.go patterns_gen.go
 package main
 
 import (
@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -23,103 +22,6 @@ type FilterConfig struct {
 const (
 	StateNormal = iota
 	StateInPrivateKey
-)
-
-const (
-	MaxPrivateKeyBuffer = 100
-	LongThreshold       = 50
-)
-
-var (
-	privateKeyBegin = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)
-	privateKeyEnd   = regexp.MustCompile(`-----END [A-Z ]*PRIVATE KEY-----`)
-)
-
-// Pattern holds a compiled regex and its label
-type Pattern struct {
-	Regex *regexp.Regexp
-	Label string
-}
-
-// Patterns that can be matched directly
-var patterns = []Pattern{
-	// GitHub
-	{regexp.MustCompile(`ghp_[A-Za-z0-9]{36}`), "GITHUB_PAT"},
-	{regexp.MustCompile(`gho_[A-Za-z0-9]{36}`), "GITHUB_OAUTH"},
-	{regexp.MustCompile(`ghs_[A-Za-z0-9]{36}`), "GITHUB_SERVER"},
-	{regexp.MustCompile(`ghr_[A-Za-z0-9]{36}`), "GITHUB_REFRESH"},
-	{regexp.MustCompile(`github_pat_[A-Za-z0-9_]{22,}`), "GITHUB_PAT"},
-
-	// GitLab
-	{regexp.MustCompile(`glpat-[A-Za-z0-9_-]{20,}`), "GITLAB_PAT"},
-
-	// Slack
-	{regexp.MustCompile(`xoxb-[0-9]+-[0-9A-Za-z-]+`), "SLACK_BOT"},
-	{regexp.MustCompile(`xoxp-[0-9]+-[0-9A-Za-z-]+`), "SLACK_USER"},
-	{regexp.MustCompile(`xoxa-[0-9]+-[0-9A-Za-z-]+`), "SLACK_APP"},
-	{regexp.MustCompile(`xoxs-[0-9]+-[0-9A-Za-z-]+`), "SLACK_SESSION"},
-
-	// OpenAI / Anthropic
-	{regexp.MustCompile(`sk-[A-Za-z0-9]{48}`), "OPENAI_KEY"},
-	{regexp.MustCompile(`sk-proj-[A-Za-z0-9_-]{20,}`), "OPENAI_PROJECT_KEY"},
-	{regexp.MustCompile(`sk-ant-[A-Za-z0-9-]{90,}`), "ANTHROPIC_KEY"},
-
-	// AWS
-	{regexp.MustCompile(`AKIA[A-Z0-9]{16}`), "AWS_ACCESS_KEY"},
-
-	// Google Cloud
-	{regexp.MustCompile(`AIza[A-Za-z0-9_-]{35}`), "GOOGLE_API_KEY"},
-
-	// age encryption
-	{regexp.MustCompile(`AGE-SECRET-KEY-[A-Z0-9]{59}`), "AGE_SECRET_KEY"},
-
-	// Stripe
-	{regexp.MustCompile(`sk_live_[A-Za-z0-9]{24,}`), "STRIPE_SECRET"},
-	{regexp.MustCompile(`sk_test_[A-Za-z0-9]{24,}`), "STRIPE_TEST"},
-	{regexp.MustCompile(`pk_live_[A-Za-z0-9]{24,}`), "STRIPE_PUBLISHABLE"},
-
-	// Twilio
-	{regexp.MustCompile(`SK[a-f0-9]{32}`), "TWILIO_KEY"},
-
-	// SendGrid
-	{regexp.MustCompile(`SG\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`), "SENDGRID_KEY"},
-
-	// npm / PyPI
-	{regexp.MustCompile(`npm_[A-Za-z0-9]{36}`), "NPM_TOKEN"},
-	{regexp.MustCompile(`pypi-[A-Za-z0-9_-]{100,}`), "PYPI_TOKEN"},
-
-	// JWT tokens
-	{regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`), "JWT_TOKEN"},
-}
-
-// Context patterns (need capture groups since Go doesn't support lookbehind)
-var contextPatterns = []struct {
-	Regex *regexp.Regexp
-	Label string
-	Group int // which capture group contains the secret
-}{
-	// netrc/authinfo: password <value> or passwd <value>
-	{regexp.MustCompile(`(password |passwd )([^\s]+)`), "NETRC_PASSWORD", 2},
-
-	// Generic key=value patterns
-	{regexp.MustCompile(`(password=)([^\s,;"'\}\[\]]+)`), "PASSWORD_VALUE", 2},
-	{regexp.MustCompile(`(password:)(\s*[^\s,;"'\}\[\]]+)`), "PASSWORD_VALUE", 2},
-	{regexp.MustCompile(`(Password=)([^\s,;"'\}\[\]]+)`), "PASSWORD_VALUE", 2},
-	{regexp.MustCompile(`(Password:)(\s*[^\s,;"'\}\[\]]+)`), "PASSWORD_VALUE", 2},
-	{regexp.MustCompile(`(secret=)([^\s,;"'\}\[\]]+)`), "SECRET_VALUE", 2},
-	{regexp.MustCompile(`(secret:)(\s*[^\s,;"'\}\[\]]+)`), "SECRET_VALUE", 2},
-	{regexp.MustCompile(`(Secret=)([^\s,;"'\}\[\]]+)`), "SECRET_VALUE", 2},
-	{regexp.MustCompile(`(Secret:)(\s*[^\s,;"'\}\[\]]+)`), "SECRET_VALUE", 2},
-	{regexp.MustCompile(`(token=)([^\s,;"'\}\[\]]+)`), "TOKEN_VALUE", 2},
-	{regexp.MustCompile(`(token:)(\s*[^\s,;"'\}\[\]]+)`), "TOKEN_VALUE", 2},
-	{regexp.MustCompile(`(Token=)([^\s,;"'\}\[\]]+)`), "TOKEN_VALUE", 2},
-	{regexp.MustCompile(`(Token:)(\s*[^\s,;"'\}\[\]]+)`), "TOKEN_VALUE", 2},
-}
-
-// Special patterns with context preservation
-var (
-	gitCredentialPattern = regexp.MustCompile(`(://[^:]+:)([^@]+)(@)`)
-	dockerAuthPattern    = regexp.MustCompile(`("auth":\s*")([A-Za-z0-9+/=]{20,})(")`)
 )
 
 // classifySegment returns N for digits, A for letters, X for mixed
@@ -210,21 +112,6 @@ func describeStructure(s string) string {
 func loadSecrets() map[string]string {
 	secrets := make(map[string]string)
 
-	// Explicit env var names known to contain secrets
-	explicit := map[string]bool{
-		"GITHUB_TOKEN": true, "GH_TOKEN": true, "GITLAB_TOKEN": true, "GLAB_TOKEN": true, "BITBUCKET_TOKEN": true,
-		"AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "AZURE_CLIENT_SECRET": true,
-		"OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "CLAUDE_API_KEY": true,
-		"SLACK_TOKEN": true, "SLACK_BOT_TOKEN": true, "SLACK_WEBHOOK_URL": true,
-		"NPM_TOKEN": true, "PYPI_TOKEN": true, "DOCKER_PASSWORD": true,
-		"DATABASE_URL": true, "REDIS_URL": true, "MONGODB_URI": true,
-		"JWT_SECRET": true, "SESSION_SECRET": true, "ENCRYPTION_KEY": true,
-		"SENDGRID_API_KEY": true, "TWILIO_AUTH_TOKEN": true, "STRIPE_SECRET_KEY": true,
-	}
-
-	// Suffixes that indicate secret env vars
-	patterns := []string{"_SECRET", "_PASSWORD", "_TOKEN", "_API_KEY", "_PRIVATE_KEY", "_AUTH", "_CREDENTIAL"}
-
 	for _, env := range os.Environ() {
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) != 2 {
@@ -237,14 +124,14 @@ func loadSecrets() map[string]string {
 			continue
 		}
 
-		// Check explicit names
-		if explicit[name] {
+		// Check explicit names (from patterns_gen.go)
+		if explicitEnvVars[name] {
 			secrets[name] = value
 			continue
 		}
 
-		// Check suffix patterns
-		for _, suffix := range patterns {
+		// Check suffix patterns (from patterns_gen.go)
+		for _, suffix := range envSuffixes {
 			if strings.HasSuffix(name, suffix) {
 				secrets[name] = value
 				break

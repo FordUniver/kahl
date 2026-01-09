@@ -1,6 +1,6 @@
 // secrets-filter: Filter stdin for secrets, redact with labels
 // Streaming mode with state machine for private keys
-// Build: swiftc -O -o secrets-filter main.swift
+// Build: swiftc -O -o secrets-filter main.swift patterns_gen.swift
 //
 // Filter modes:
 //   --filter=values    - redact known secret values from environment
@@ -111,90 +111,24 @@ func getFilterConfig() -> FilterConfig? {
 
 let STATE_NORMAL = 0
 let STATE_IN_PRIVATE_KEY = 1
-let MAX_PRIVATE_KEY_BUFFER = 100
-let LONG_THRESHOLD = 50
 
-// Private key markers
-let privateKeyBegin = #/-----BEGIN [A-Z ]*PRIVATE KEY-----/#
-let privateKeyEnd = #/-----END [A-Z ]*PRIVATE KEY-----/#
+// Compile patterns from patterns_gen.swift at startup
+let privateKeyBegin = try! Regex(privateKeyBeginPattern)
+let privateKeyEnd = try! Regex(privateKeyEndPattern)
 
-// Direct patterns (no lookbehind needed): (regex, label)
-let directPatterns: [(Regex<Substring>, String)] = [
-    // GitHub
-    (#/ghp_[A-Za-z0-9]{36}/#, "GITHUB_PAT"),
-    (#/gho_[A-Za-z0-9]{36}/#, "GITHUB_OAUTH"),
-    (#/ghs_[A-Za-z0-9]{36}/#, "GITHUB_SERVER"),
-    (#/ghr_[A-Za-z0-9]{36}/#, "GITHUB_REFRESH"),
-    (#/github_pat_[A-Za-z0-9_]{22,}/#, "GITHUB_PAT"),
+// Direct patterns compiled from generated strings
+let directPatterns: [(Regex<AnyRegexOutput>, String)] = patterns.map { (pattern, label) in
+    (try! Regex(pattern), label)
+}
 
-    // GitLab
-    (#/glpat-[A-Za-z0-9_\-]{20,}/#, "GITLAB_PAT"),
+// Context patterns compiled from generated strings
+let compiledContextPatterns: [(Regex<AnyRegexOutput>, String, Int)] = contextPatterns.map { (pattern, label, group) in
+    (try! Regex(pattern), label, group)
+}
 
-    // Slack
-    (#/xoxb-[0-9]+-[0-9A-Za-z\-]+/#, "SLACK_BOT"),
-    (#/xoxp-[0-9]+-[0-9A-Za-z\-]+/#, "SLACK_USER"),
-    (#/xoxa-[0-9]+-[0-9A-Za-z\-]+/#, "SLACK_APP"),
-    (#/xoxs-[0-9]+-[0-9A-Za-z\-]+/#, "SLACK_SESSION"),
-
-    // OpenAI / Anthropic
-    (#/sk-[A-Za-z0-9]{48}/#, "OPENAI_KEY"),
-    (#/sk-proj-[A-Za-z0-9_\-]{20,}/#, "OPENAI_PROJECT_KEY"),
-    (#/sk-ant-[A-Za-z0-9\-]{90,}/#, "ANTHROPIC_KEY"),
-
-    // AWS
-    (#/AKIA[A-Z0-9]{16}/#, "AWS_ACCESS_KEY"),
-
-    // Google Cloud
-    (#/AIza[A-Za-z0-9_\-]{35}/#, "GOOGLE_API_KEY"),
-
-    // age encryption
-    (#/AGE-SECRET-KEY-[A-Z0-9]{59}/#, "AGE_SECRET_KEY"),
-
-    // Stripe
-    (#/sk_live_[A-Za-z0-9]{24,}/#, "STRIPE_SECRET"),
-    (#/sk_test_[A-Za-z0-9]{24,}/#, "STRIPE_TEST"),
-    (#/pk_live_[A-Za-z0-9]{24,}/#, "STRIPE_PUBLISHABLE"),
-
-    // Twilio
-    (#/SK[a-f0-9]{32}/#, "TWILIO_KEY"),
-
-    // SendGrid
-    (#/SG\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/#, "SENDGRID_KEY"),
-
-    // npm / PyPI
-    (#/npm_[A-Za-z0-9]{36}/#, "NPM_TOKEN"),
-    (#/pypi-[A-Za-z0-9_\-]{100,}/#, "PYPI_TOKEN"),
-
-    // JWT tokens
-    (#/eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/#, "JWT_TOKEN"),
-]
-
-// Context patterns with capture groups (simulating lookbehind)
-// Format: (regex with capture groups, label, group index for secret)
-let contextPatterns: [(Regex<(Substring, Substring, Substring)>, String)] = [
-    // netrc/authinfo: password <value> or passwd <value>
-    (#/(password |passwd )([^\s]+)/#, "NETRC_PASSWORD"),
-
-    // Generic key=value patterns
-    (#/(password=)([^\s,;"'\}\[\]]+)/#, "PASSWORD_VALUE"),
-    (#/(password:)(\s*[^\s,;"'\}\[\]]+)/#, "PASSWORD_VALUE"),
-    (#/(Password=)([^\s,;"'\}\[\]]+)/#, "PASSWORD_VALUE"),
-    (#/(Password:)(\s*[^\s,;"'\}\[\]]+)/#, "PASSWORD_VALUE"),
-    (#/(secret=)([^\s,;"'\}\[\]]+)/#, "SECRET_VALUE"),
-    (#/(secret:)(\s*[^\s,;"'\}\[\]]+)/#, "SECRET_VALUE"),
-    (#/(Secret=)([^\s,;"'\}\[\]]+)/#, "SECRET_VALUE"),
-    (#/(Secret:)(\s*[^\s,;"'\}\[\]]+)/#, "SECRET_VALUE"),
-    (#/(token=)([^\s,;"'\}\[\]]+)/#, "TOKEN_VALUE"),
-    (#/(token:)(\s*[^\s,;"'\}\[\]]+)/#, "TOKEN_VALUE"),
-    (#/(Token=)([^\s,;"'\}\[\]]+)/#, "TOKEN_VALUE"),
-    (#/(Token:)(\s*[^\s,;"'\}\[\]]+)/#, "TOKEN_VALUE"),
-]
-
-// Git credential pattern: ://user:password@
-let gitCredPattern = #/(:[\/][\/][^:]+:)([^@]+)(@)/#
-
-// Docker config auth pattern
-let dockerAuthPattern = #/("auth":\s*")([A-Za-z0-9+\/=]{20,})(")/#
+// Special patterns compiled from generated structs
+let gitCredPattern = try! Regex(gitCredentialPattern.pattern)
+let compiledDockerAuthPattern = try! Regex(dockerAuthPattern.pattern)
 
 // Classify a segment: N=digits, A=letters, X=mixed
 func classifySegment(_ s: String) -> String {
@@ -209,7 +143,7 @@ func describeStructure(_ s: String) -> String {
     if s.isEmpty { return "" }
 
     // Very long tokens: show length with prefix hint
-    if s.count >= LONG_THRESHOLD {
+    if s.count >= longThreshold {
         for sep in ["-", "_", "."] {
             if s.contains(sep) {
                 let parts = s.components(separatedBy: sep)
@@ -244,24 +178,11 @@ func describeStructure(_ s: String) -> String {
 func loadSecrets() -> [String: String] {
     var secrets: [String: String] = [:]
 
-    let explicit: Set<String> = [
-        "GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN", "BITBUCKET_TOKEN",
-        "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AZURE_CLIENT_SECRET",
-        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
-        "SLACK_TOKEN", "SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL",
-        "NPM_TOKEN", "PYPI_TOKEN", "DOCKER_PASSWORD",
-        "DATABASE_URL", "REDIS_URL", "MONGODB_URI",
-        "JWT_SECRET", "SESSION_SECRET", "ENCRYPTION_KEY",
-        "SENDGRID_API_KEY", "TWILIO_AUTH_TOKEN", "STRIPE_SECRET_KEY"
-    ]
-
-    let patterns = ["_SECRET", "_PASSWORD", "_TOKEN", "_API_KEY", "_PRIVATE_KEY", "_AUTH", "_CREDENTIAL"]
-
     let env = ProcessInfo.processInfo.environment
     for (name, value) in env {
         guard value.count >= 8 else { continue }
 
-        if explicit.contains(name) || patterns.contains(where: { name.hasSuffix($0) }) {
+        if explicitEnvVars.contains(name) || envSuffixes.contains(where: { name.hasSuffix($0) }) {
             secrets[name] = value
         }
     }
@@ -294,17 +215,17 @@ func redactPatterns(_ text: String) -> String {
     // Direct patterns
     for (pattern, label) in directPatterns {
         result = result.replacing(pattern) { match in
-            let matched = String(match.0)
+            let matched = String(match.output[0].substring!)
             let structure = describeStructure(matched)
             return "[REDACTED:\(label):\(structure)]"
         }
     }
 
     // Context patterns (capture group approach)
-    for (pattern, label) in contextPatterns {
+    for (pattern, label, _) in compiledContextPatterns {
         result = result.replacing(pattern) { match in
-            let prefix = String(match.1)
-            let secret = String(match.2)
+            let prefix = String(match.output[1].substring!)
+            let secret = String(match.output[2].substring!)
             let structure = describeStructure(secret)
             return "\(prefix)[REDACTED:\(label):\(structure)]"
         }
@@ -312,20 +233,20 @@ func redactPatterns(_ text: String) -> String {
 
     // Git credential URLs: ://user:password@ -> ://user:[REDACTED]@
     result = result.replacing(gitCredPattern) { match in
-        let prefix = String(match.1)
-        let password = String(match.2)
-        let suffix = String(match.3)
+        let prefix = String(match.output[1].substring!)
+        let password = String(match.output[2].substring!)
+        let suffix = String(match.output[3].substring!)
         let structure = describeStructure(password)
-        return "\(prefix)[REDACTED:GIT_CREDENTIAL:\(structure)]\(suffix)"
+        return "\(prefix)[REDACTED:\(gitCredentialPattern.label):\(structure)]\(suffix)"
     }
 
     // Docker config auth
-    result = result.replacing(dockerAuthPattern) { match in
-        let prefix = String(match.1)
-        let auth = String(match.2)
-        let suffix = String(match.3)
+    result = result.replacing(compiledDockerAuthPattern) { match in
+        let prefix = String(match.output[1].substring!)
+        let auth = String(match.output[2].substring!)
+        let suffix = String(match.output[3].substring!)
         let structure = describeStructure(auth)
-        return "\(prefix)[REDACTED:DOCKER_AUTH:\(structure)]\(suffix)"
+        return "\(prefix)[REDACTED:\(dockerAuthPattern.label):\(structure)]\(suffix)"
     }
 
     return result
@@ -394,7 +315,7 @@ func main() {
                 fflush(stdout)
                 buffer = []
                 state = STATE_NORMAL
-            } else if buffer.count > MAX_PRIVATE_KEY_BUFFER {
+            } else if buffer.count > maxPrivateKeyBuffer {
                 flushBufferRedacted(buffer, secrets, config)
                 buffer = []
                 state = STATE_NORMAL
