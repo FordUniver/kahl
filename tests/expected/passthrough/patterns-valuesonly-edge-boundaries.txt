@@ -1,0 +1,15 @@
+# Boundary edge cases - secrets at exact line start/end
+
+# Secret at exact line start (no leading chars)
+ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+glpat-abcdefghij1234567890
+
+# Secret at exact line end (trailing whitespace should not affect)
+Token here: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+With tab:	glpat-abcdefghij1234567890
+
+# Secrets surrounded only by punctuation
+[ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789]
+(glpat-abcdefghij1234567890)
+"ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+'glpat-abcdefghij1234567890'

@@ -311,7 +311,7 @@ fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[Context
         result = cp.regex.replace_all(&result, |caps: &regex::Captures| {
             let prefix = caps.get(1).map_or("", |m| m.as_str());
             let secret = caps.get(cp.group).map_or("", |m| m.as_str());
-            let structure = describe_structure(secret.trim());
+            let structure = describe_structure(secret);
             format!("{}[REDACTED:{}:{}]", prefix, cp.label, structure)
         }).to_string();
     }

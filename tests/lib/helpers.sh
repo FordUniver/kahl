@@ -73,8 +73,8 @@ run_in_env() {
     local impl_path="$2"
     shift 2
 
-    # Build env array
-    local -a env_vars=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp")
+    # Build env array - include LANG for Unicode support
+    local -a env_vars=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp" "LANG=en_US.UTF-8" "LC_ALL=en_US.UTF-8")
 
     # Add test secrets for values or all modes
     if [[ "$mode" == "values" || "$mode" == "all" ]]; then

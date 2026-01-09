@@ -1,0 +1,12 @@
+# Unicode edge cases
+# These patterns should still be detected regardless of surrounding unicode
+
+# Secret with unicode context
+日本語テキスト ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789 続きのテキスト
+Ümlauts and äccents: password=mysecretpassword123456
+emoji context: token=mysecrettoken12345678 🔑🔐
+
+# Should NOT match - these are safe unicode
+Just Japanese: こんにちは世界
+Russian: Привет мир
+Arabic: مرحبا بالعالم

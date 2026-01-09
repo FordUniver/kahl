@@ -191,7 +191,7 @@ let contextPatterns: [(Regex<(Substring, Substring, Substring)>, String)] = [
 ]
 
 // Git credential pattern: ://user:password@
-let gitCredPattern = #/(:[\/][\/][^:]+:)([^@\[]+)(@)/#
+let gitCredPattern = #/(:[\/][\/][^:]+:)([^@]+)(@)/#
 
 // Docker config auth pattern
 let dockerAuthPattern = #/("auth":\s*")([A-Za-z0-9+\/=]{20,})(")/#
@@ -304,7 +304,7 @@ func redactPatterns(_ text: String) -> String {
     for (pattern, label) in contextPatterns {
         result = result.replacing(pattern) { match in
             let prefix = String(match.1)
-            let secret = String(match.2).trimmingCharacters(in: .whitespaces)
+            let secret = String(match.2)
             let structure = describeStructure(secret)
             return "\(prefix)[REDACTED:\(label):\(structure)]"
         }

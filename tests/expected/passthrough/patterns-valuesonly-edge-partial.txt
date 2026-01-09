@@ -1,0 +1,26 @@
+# Partial matches that should NOT trigger redaction
+# Testing pattern boundaries
+
+# Too short prefixes
+ghp_12345
+glpat-short
+sk-123
+
+# Prefix alone
+ghp_
+glpat-
+sk-ant-api03-
+
+# Similar but not matching patterns
+ghpx_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+xghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+Xglpat-abcdefghij1234567890
+
+# Context words that look like key-value but aren't
+passwordless authentication
+secretive behavior
+tokenization process
+apikey_manager_config
+
+# Pattern-like strings in URLs (should still match if long enough)
+https://example.com?token=abcdefghijklmnop

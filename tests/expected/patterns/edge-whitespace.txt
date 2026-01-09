@@ -1,0 +1,16 @@
+# Whitespace edge cases
+
+# Empty line (should pass through)
+
+# Whitespace-only lines
+
+
+
+# Multiple spaces around secret
+   [REDACTED:GITHUB_PAT:ghp_36X]
+
+# Tab-separated values
+field1	[REDACTED:GITHUB_PAT:ghp_36X]	field3
+
+# Mixed whitespace
+  	 password=[REDACTED:PASSWORD_VALUE:22X]

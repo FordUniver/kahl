@@ -383,7 +383,7 @@ func redactPatterns(text string) string {
 			submatches := cp.Regex.FindStringSubmatch(match)
 			if len(submatches) > cp.Group {
 				secret := submatches[cp.Group]
-				structure := describeStructure(strings.TrimSpace(secret))
+				structure := describeStructure(secret)
 				return submatches[1] + fmt.Sprintf("[REDACTED:%s:%s]", cp.Label, structure)
 			}
 			return match
@@ -465,7 +465,7 @@ func main() {
 
 		switch state {
 		case StateNormal:
-			if privateKeyBegin.MatchString(line) {
+			if config.PatternsEnabled && privateKeyBegin.MatchString(line) {
 				state = StateInPrivateKey
 				buffer = []string{line}
 			} else {

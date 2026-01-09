@@ -1,0 +1,15 @@
+# Boundary edge cases - secrets at exact line start/end
+
+# Secret at exact line start (no leading chars)
+[REDACTED:GITHUB_PAT:ghp_36X]
+[REDACTED:GITLAB_PAT:glpat-20X]
+
+# Secret at exact line end (trailing whitespace should not affect)
+Token here: [REDACTED:GITHUB_PAT:ghp_36X]
+With tab:	[REDACTED:GITLAB_PAT:glpat-20X]
+
+# Secrets surrounded only by punctuation
+[[REDACTED:GITHUB_PAT:ghp_36X]]
+([REDACTED:GITLAB_PAT:glpat-20X])
+"[REDACTED:GITHUB_PAT:ghp_36X]"
+'[REDACTED:GITLAB_PAT:glpat-20X]'

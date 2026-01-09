@@ -48,8 +48,8 @@ benchmark() {
     local mode="$2"
     local name="$impl/$mode"
 
-    # Build env for this mode
-    local -a env_vars=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp")
+    # Build env for this mode - include LANG for Unicode support
+    local -a env_vars=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp" "LANG=en_US.UTF-8" "LC_ALL=en_US.UTF-8")
     if [[ "$mode" == "values" || "$mode" == "all" ]]; then
         while IFS= read -r line; do
             [[ -n "$line" ]] && env_vars+=("$line")
