@@ -1,0 +1,12 @@
+[package]
+name = "secrets-filter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+regex = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

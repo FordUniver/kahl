@@ -24,6 +24,7 @@ declare -a IMPLS=()
 [[ -x go/secrets-filter ]] && IMPLS+=(go/secrets-filter)
 [[ -x bash/secrets-filter ]] && IMPLS+=(bash/secrets-filter)
 [[ -x ruby/secrets-filter ]] && IMPLS+=(ruby/secrets-filter)
+[[ -x rust/secrets-filter ]] && IMPLS+=(rust/secrets-filter)
 
 benchmark() {
     local name="$1"
