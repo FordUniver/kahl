@@ -1,5 +1,5 @@
 // secrets-filter: Filter stdin for secrets, redact with labels
-// Build: go build -o secrets-filter secrets-filter.go patterns_gen.go
+// Build: go build -ldflags="-s -w" -o secrets-filter secrets-filter.go patterns_gen.go
 package main
 
 import (
@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -42,13 +43,14 @@ func classifySegment(s string) string {
 			allLetters = false
 		}
 	}
+	lenStr := strconv.Itoa(len(s))
 	if allDigits {
-		return fmt.Sprintf("%dN", len(s))
+		return lenStr + "N"
 	}
 	if allLetters {
-		return fmt.Sprintf("%dA", len(s))
+		return lenStr + "A"
 	}
-	return fmt.Sprintf("%dX", len(s))
+	return lenStr + "X"
 }
 
 // describeStructure returns a description of the token structure
@@ -72,11 +74,11 @@ func describeStructure(s string) string {
 				}
 				knownPrefixes := map[string]bool{"ghp": true, "gho": true, "ghs": true, "ghr": true, "npm": true, "sk": true}
 				if isAlpha || knownPrefixes[first] {
-					return fmt.Sprintf("%s%s...:%dchars", first, sep, len(s))
+					return first + sep + "...:" + strconv.Itoa(len(s)) + "chars"
 				}
 			}
 		}
-		return fmt.Sprintf("%dchars", len(s))
+		return strconv.Itoa(len(s)) + "chars"
 	}
 
 	// Check for structured tokens
@@ -268,7 +270,7 @@ func redactEnvValues(text string, secrets map[string]string) string {
 
 	for _, s := range sorted {
 		structure := describeStructure(s.val)
-		replacement := fmt.Sprintf("[REDACTED:%s:%s]", s.key, structure)
+		replacement := "[REDACTED:" + s.key + ":" + structure + "]"
 		text = strings.ReplaceAll(text, s.val, replacement)
 	}
 
@@ -281,7 +283,7 @@ func redactPatterns(text string) string {
 	for _, p := range patterns {
 		text = p.Regex.ReplaceAllStringFunc(text, func(match string) string {
 			structure := describeStructure(match)
-			return fmt.Sprintf("[REDACTED:%s:%s]", p.Label, structure)
+			return "[REDACTED:" + p.Label + ":" + structure + "]"
 		})
 	}
 
@@ -292,7 +294,7 @@ func redactPatterns(text string) string {
 			if len(submatches) > cp.Group {
 				secret := submatches[cp.Group]
 				structure := describeStructure(secret)
-				return submatches[1] + fmt.Sprintf("[REDACTED:%s:%s]", cp.Label, structure)
+				return submatches[1] + "[REDACTED:" + cp.Label + ":" + structure + "]"
 			}
 			return match
 		})
@@ -303,7 +305,7 @@ func redactPatterns(text string) string {
 		submatches := gitCredentialPattern.FindStringSubmatch(match)
 		if len(submatches) >= 4 {
 			structure := describeStructure(submatches[2])
-			return submatches[1] + fmt.Sprintf("[REDACTED:GIT_CREDENTIAL:%s]", structure) + submatches[3]
+			return submatches[1] + "[REDACTED:GIT_CREDENTIAL:" + structure + "]" + submatches[3]
 		}
 		return match
 	})
@@ -313,7 +315,7 @@ func redactPatterns(text string) string {
 		submatches := dockerAuthPattern.FindStringSubmatch(match)
 		if len(submatches) >= 4 {
 			structure := describeStructure(submatches[2])
-			return submatches[1] + fmt.Sprintf("[REDACTED:DOCKER_AUTH:%s]", structure) + submatches[3]
+			return submatches[1] + "[REDACTED:DOCKER_AUTH:" + structure + "]" + submatches[3]
 		}
 		return match
 	})
@@ -610,7 +612,7 @@ func describeEntropyStructure(token string, entropy float64, charset string) str
 	if abbrev == "" {
 		abbrev = charset
 	}
-	return fmt.Sprintf("%s:%d:%.1f", abbrev, len(token), entropy)
+	return abbrev + ":" + strconv.Itoa(len(token)) + ":" + strconv.FormatFloat(entropy, 'f', 1, 64)
 }
 
 // getEntropyConfig gets entropy configuration with environment variable overrides
@@ -708,7 +710,7 @@ func redactEntropy(text string, config EntropyConfig) string {
 
 		if entropy >= threshold {
 			structure := describeEntropyStructure(token.Value, entropy, charset)
-			repl := fmt.Sprintf("[REDACTED:HIGH_ENTROPY:%s]", structure)
+			repl := "[REDACTED:HIGH_ENTROPY:" + structure + "]"
 			replacements = append(replacements, replacement{
 				start: token.Start,
 				end:   token.End,

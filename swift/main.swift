@@ -1,6 +1,6 @@
 // secrets-filter: Filter stdin for secrets, redact with labels
 // Streaming mode with state machine for private keys
-// Build: swiftc -O -o secrets-filter main.swift patterns_gen.swift
+// Build: swiftc -O -whole-module-optimization -o secrets-filter main.swift patterns_gen.swift
 //
 // Filter modes:
 //   --filter=values    - redact known secret values from environment
@@ -21,6 +21,30 @@
 //   SECRETS_FILTER_ENTROPY_MAX_LEN=N     - maximum token length (default: 256)
 
 import Foundation
+
+// MARK: - NSRegularExpression Helpers
+
+/// Compiled NSRegularExpression with label for pattern matching
+struct CompiledPattern {
+    let regex: NSRegularExpression
+    let label: String
+}
+
+/// Compiled context pattern with capture groups
+struct CompiledContextPattern {
+    let regex: NSRegularExpression
+    let label: String
+    let secretGroup: Int
+}
+
+/// Helper to create NSRegularExpression (crashes on invalid pattern - same as try!)
+func compileRegex(_ pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression {
+    do {
+        return try NSRegularExpression(pattern: pattern, options: options)
+    } catch {
+        fatalError("Invalid regex pattern: \(pattern)")
+    }
+}
 
 // Filter configuration
 struct FilterConfig {
@@ -138,23 +162,25 @@ func getFilterConfig() -> FilterConfig? {
 let STATE_NORMAL = 0
 let STATE_IN_PRIVATE_KEY = 1
 
-// Compile patterns from patterns_gen.swift at startup
-let privateKeyBegin = try! Regex(privateKeyBeginPattern)
-let privateKeyEnd = try! Regex(privateKeyEndPattern)
+// MARK: - Compiled Patterns (NSRegularExpression for performance)
+
+// Private key markers
+let privateKeyBeginRegex = compileRegex(privateKeyBeginPattern)
+let privateKeyEndRegex = compileRegex(privateKeyEndPattern)
 
 // Direct patterns compiled from generated strings
-let directPatterns: [(Regex<AnyRegexOutput>, String)] = patterns.map { (pattern, label) in
-    (try! Regex(pattern), label)
+let compiledDirectPatterns: [CompiledPattern] = patterns.map { (pattern, label) in
+    CompiledPattern(regex: compileRegex(pattern), label: label)
 }
 
 // Context patterns compiled from generated strings
-let compiledContextPatterns: [(Regex<AnyRegexOutput>, String, Int)] = contextPatterns.map { (pattern, label, group) in
-    (try! Regex(pattern), label, group)
+let compiledCtxPatterns: [CompiledContextPattern] = contextPatterns.map { (pattern, label, group) in
+    CompiledContextPattern(regex: compileRegex(pattern), label: label, secretGroup: group)
 }
 
 // Special patterns compiled from generated structs
-let gitCredPattern = try! Regex(gitCredentialPattern.pattern)
-let compiledDockerAuthPattern = try! Regex(dockerAuthPattern.pattern)
+let gitCredRegex = compileRegex(gitCredentialPattern.pattern)
+let dockerAuthRegex = compileRegex(dockerAuthPattern.pattern)
 
 // Classify a segment: N=digits, A=letters, X=mixed
 func classifySegment(_ s: String) -> String {
@@ -234,45 +260,76 @@ func redactEnvValues(_ text: String, _ secrets: [String: String]) -> String {
     return result
 }
 
-// Replace known token patterns
+// Replace known token patterns using NSRegularExpression
 func redactPatterns(_ text: String) -> String {
     var result = text
 
-    // Direct patterns
-    for (pattern, label) in directPatterns {
-        result = result.replacing(pattern) { match in
-            let matched = String(match.output[0].substring!)
+    // Direct patterns - process in reverse order of match positions to preserve indices
+    for cp in compiledDirectPatterns {
+        let matches = cp.regex.matches(in: result, range: NSRange(location: 0, length: (result as NSString).length))
+        // Process in reverse to maintain valid indices
+        for match in matches.reversed() {
+            let matchedRange = match.range
+            let matched = (result as NSString).substring(with: matchedRange)
             let structure = describeStructure(matched)
-            return "[REDACTED:\(label):\(structure)]"
+            let replacement = "[REDACTED:\(cp.label):\(structure)]"
+            result = (result as NSString).replacingCharacters(in: matchedRange, with: replacement)
         }
     }
 
     // Context patterns (capture group approach)
-    for (pattern, label, _) in compiledContextPatterns {
-        result = result.replacing(pattern) { match in
-            let prefix = String(match.output[1].substring!)
-            let secret = String(match.output[2].substring!)
+    for cp in compiledCtxPatterns {
+        let matches = cp.regex.matches(in: result, range: NSRange(location: 0, length: (result as NSString).length))
+        for match in matches.reversed() {
+            guard match.numberOfRanges >= 3 else { continue }
+            let prefixRange = match.range(at: 1)
+            let secretRange = match.range(at: 2)
+            guard prefixRange.location != NSNotFound, secretRange.location != NSNotFound else { continue }
+
+            let prefix = (result as NSString).substring(with: prefixRange)
+            let secret = (result as NSString).substring(with: secretRange)
             let structure = describeStructure(secret)
-            return "\(prefix)[REDACTED:\(label):\(structure)]"
+            let replacement = "\(prefix)[REDACTED:\(cp.label):\(structure)]"
+            result = (result as NSString).replacingCharacters(in: match.range, with: replacement)
         }
     }
 
     // Git credential URLs: ://user:password@ -> ://user:[REDACTED]@
-    result = result.replacing(gitCredPattern) { match in
-        let prefix = String(match.output[1].substring!)
-        let password = String(match.output[2].substring!)
-        let suffix = String(match.output[3].substring!)
+    let gitMatches = gitCredRegex.matches(in: result, range: NSRange(location: 0, length: (result as NSString).length))
+    for match in gitMatches.reversed() {
+        guard match.numberOfRanges >= 4 else { continue }
+        let prefixRange = match.range(at: 1)
+        let passwordRange = match.range(at: 2)
+        let suffixRange = match.range(at: 3)
+        guard prefixRange.location != NSNotFound,
+              passwordRange.location != NSNotFound,
+              suffixRange.location != NSNotFound else { continue }
+
+        let prefix = (result as NSString).substring(with: prefixRange)
+        let password = (result as NSString).substring(with: passwordRange)
+        let suffix = (result as NSString).substring(with: suffixRange)
         let structure = describeStructure(password)
-        return "\(prefix)[REDACTED:\(gitCredentialPattern.label):\(structure)]\(suffix)"
+        let replacement = "\(prefix)[REDACTED:\(gitCredentialPattern.label):\(structure)]\(suffix)"
+        result = (result as NSString).replacingCharacters(in: match.range, with: replacement)
     }
 
     // Docker config auth
-    result = result.replacing(compiledDockerAuthPattern) { match in
-        let prefix = String(match.output[1].substring!)
-        let auth = String(match.output[2].substring!)
-        let suffix = String(match.output[3].substring!)
+    let dockerMatches = dockerAuthRegex.matches(in: result, range: NSRange(location: 0, length: (result as NSString).length))
+    for match in dockerMatches.reversed() {
+        guard match.numberOfRanges >= 4 else { continue }
+        let prefixRange = match.range(at: 1)
+        let authRange = match.range(at: 2)
+        let suffixRange = match.range(at: 3)
+        guard prefixRange.location != NSNotFound,
+              authRange.location != NSNotFound,
+              suffixRange.location != NSNotFound else { continue }
+
+        let prefix = (result as NSString).substring(with: prefixRange)
+        let auth = (result as NSString).substring(with: authRange)
+        let suffix = (result as NSString).substring(with: suffixRange)
         let structure = describeStructure(auth)
-        return "\(prefix)[REDACTED:\(dockerAuthPattern.label):\(structure)]\(suffix)"
+        let replacement = "\(prefix)[REDACTED:\(dockerAuthPattern.label):\(structure)]\(suffix)"
+        result = (result as NSString).replacingCharacters(in: match.range, with: replacement)
     }
 
     return result
@@ -292,24 +349,20 @@ let charsetHex = Set("0123456789abcdef")
 let charsetBase64 = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
 let charsetAlnum = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
 
-// Token extraction regex: split on delimiters
-let tokenDelimRegex = try! Regex("[\\s\"'`()\\[\\]{},:;<>=@#]+")
+// Token extraction regex: split on delimiters (NSRegularExpression)
+let tokenDelimNSRegex = compileRegex("[\\s\"'`()\\[\\]{},:;<>=@#]+")
 
-// Precompile exclusion patterns
-struct CompiledExclusion {
-    let regex: Regex<AnyRegexOutput>
+// Precompile exclusion patterns (NSRegularExpression)
+struct NSCompiledExclusion {
+    let regex: NSRegularExpression
     let label: String
     let contextKeywords: [String]?
 }
 
-let compiledExclusions: [CompiledExclusion] = entropyExclusions.map { (excl: EntropyExclusion) -> CompiledExclusion in
-    let regex: Regex<AnyRegexOutput>
-    if excl.caseInsensitive {
-        regex = try! Regex(excl.pattern).ignoresCase()
-    } else {
-        regex = try! Regex(excl.pattern)
-    }
-    return CompiledExclusion(regex: regex, label: excl.label, contextKeywords: excl.contextKeywords)
+let nsCompiledExclusions: [NSCompiledExclusion] = entropyExclusions.map { (excl: EntropyExclusion) -> NSCompiledExclusion in
+    let options: NSRegularExpression.Options = excl.caseInsensitive ? [.caseInsensitive] : []
+    let regex = compileRegex(excl.pattern, options: options)
+    return NSCompiledExclusion(regex: regex, label: excl.label, contextKeywords: excl.contextKeywords)
 }
 
 // Calculate Shannon entropy in bits
@@ -354,44 +407,55 @@ func classifyCharset(_ s: String) -> String {
     return "mixed"
 }
 
-// Extract potential secret tokens from text
+// Extract potential secret tokens from text using NSRegularExpression
+// Uses NSString for O(1) index operations instead of Swift String's O(n)
 func extractTokens(_ text: String, minLen: Int, maxLen: Int) -> [(token: String, start: Int, end: Int)] {
     var tokens: [(String, Int, Int)] = []
+    let nsText = text as NSString
+    let textLength = nsText.length
 
-    // Split by delimiters while tracking positions
-    var pos = text.startIndex
-    let parts = text.split(separator: tokenDelimRegex, omittingEmptySubsequences: true)
+    // Find all delimiter matches to identify token boundaries
+    let delimMatches = tokenDelimNSRegex.matches(in: text, range: NSRange(location: 0, length: textLength))
 
-    for part in parts {
-        let partStr = String(part)
-
-        // Find position in original text
-        if let range = text.range(of: partStr, range: pos..<text.endIndex) {
-            let start = text.distance(from: text.startIndex, to: range.lowerBound)
-            let end = text.distance(from: text.startIndex, to: range.upperBound)
-            pos = range.upperBound
+    // Extract tokens between delimiters
+    var currentPos = 0
+    for delimMatch in delimMatches {
+        let delimStart = delimMatch.range.location
+        if delimStart > currentPos {
+            // Extract token between currentPos and delimStart
+            let tokenRange = NSRange(location: currentPos, length: delimStart - currentPos)
+            let partStr = nsText.substring(with: tokenRange)
 
             // Filter by length
-            if partStr.count < minLen || partStr.count > maxLen {
-                continue
-            }
+            if partStr.count >= minLen && partStr.count <= maxLen {
+                // Skip if all alphabetic (variable names)
+                let allAlpha = partStr.allSatisfy { $0.isLetter }
+                // Skip if all numeric (IDs, line numbers)
+                let allNumeric = partStr.allSatisfy { $0.isNumber }
+                // Skip if contains whitespace
+                let hasWhitespace = partStr.contains { $0.isWhitespace }
 
-            // Skip if all alphabetic (variable names)
-            if partStr.allSatisfy({ $0.isLetter }) {
-                continue
+                if !allAlpha && !allNumeric && !hasWhitespace {
+                    tokens.append((partStr, currentPos, delimStart))
+                }
             }
+        }
+        currentPos = delimMatch.range.location + delimMatch.range.length
+    }
 
-            // Skip if all numeric (IDs, line numbers)
-            if partStr.allSatisfy({ $0.isNumber }) {
-                continue
+    // Handle trailing token after last delimiter
+    if currentPos < textLength {
+        let tokenRange = NSRange(location: currentPos, length: textLength - currentPos)
+        let partStr = nsText.substring(with: tokenRange)
+
+        if partStr.count >= minLen && partStr.count <= maxLen {
+            let allAlpha = partStr.allSatisfy { $0.isLetter }
+            let allNumeric = partStr.allSatisfy { $0.isNumber }
+            let hasWhitespace = partStr.contains { $0.isWhitespace }
+
+            if !allAlpha && !allNumeric && !hasWhitespace {
+                tokens.append((partStr, currentPos, textLength))
             }
-
-            // Skip if contains whitespace
-            if partStr.contains(where: { $0.isWhitespace }) {
-                continue
-            }
-
-            tokens.append((partStr, start, end))
         }
     }
 
@@ -399,13 +463,18 @@ func extractTokens(_ text: String, minLen: Int, maxLen: Int) -> [(token: String,
 }
 
 // Check if a position in text is preceded by a context keyword
+// Uses NSString for O(1) substring extraction
 func hasContextKeyword(_ text: String, pos: Int, keywords: [String]) -> Bool {
     if keywords.isEmpty { return false }
 
-    // Look back up to 50 chars
-    let startIdx = text.index(text.startIndex, offsetBy: max(0, pos - 50))
-    let endIdx = text.index(text.startIndex, offsetBy: pos)
-    let prefix = String(text[startIdx..<endIdx]).lowercased()
+    // Look back up to 50 chars using NSString for O(1) access
+    let nsText = text as NSString
+    let startPos = max(0, pos - 50)
+    let length = pos - startPos
+    guard length > 0 else { return false }
+
+    let prefixRange = NSRange(location: startPos, length: length)
+    let prefix = nsText.substring(with: prefixRange).lowercased()
 
     for kw in keywords {
         if prefix.contains(kw.lowercased()) {
@@ -416,11 +485,14 @@ func hasContextKeyword(_ text: String, pos: Int, keywords: [String]) -> Bool {
     return false
 }
 
-// Check if token matches an exclusion pattern
+// Check if token matches an exclusion pattern using NSRegularExpression
 func matchesExclusion(_ token: String, text: String, pos: Int) -> String? {
-    for excl in compiledExclusions {
-        // Check if token fully matches the exclusion pattern
-        if (try? excl.regex.wholeMatch(in: token)) != nil {
+    let tokenRange = NSRange(location: 0, length: (token as NSString).length)
+
+    for excl in nsCompiledExclusions {
+        // Check if token fully matches the exclusion pattern (anchored match)
+        if let match = excl.regex.firstMatch(in: token, range: tokenRange),
+           match.range.location == 0 && match.range.length == tokenRange.length {
             // Check context keywords if present
             if let contextKw = excl.contextKeywords {
                 if hasContextKeyword(text, pos: pos, keywords: contextKw) {
@@ -489,6 +561,7 @@ func getEntropyConfig() -> EntropyConfig {
 }
 
 // Detect and redact high-entropy strings
+// Uses NSString for O(1) replacement operations
 func redactEntropy(_ text: String, config: EntropyConfig) -> String {
     let tokens = extractTokens(text, minLen: config.minLength, maxLen: config.maxLength)
 
@@ -522,11 +595,11 @@ func redactEntropy(_ text: String, config: EntropyConfig) -> String {
         }
     }
 
-    // Apply replacements in reverse order
+    // Apply replacements using NSString for O(1) index operations
     for (start, end, replacement) in replacements {
-        let startIdx = result.index(result.startIndex, offsetBy: start)
-        let endIdx = result.index(result.startIndex, offsetBy: end)
-        result.replaceSubrange(startIdx..<endIdx, with: replacement)
+        let nsResult = result as NSString
+        let range = NSRange(location: start, length: end - start)
+        result = nsResult.replacingCharacters(in: range, with: replacement)
     }
 
     return result
@@ -586,7 +659,8 @@ func main() {
 
         if state == STATE_NORMAL {
             // Only detect private key blocks if patterns filter is enabled
-            if config.patternsEnabled && line.contains(privateKeyBegin) {
+            let lineRange = NSRange(location: 0, length: (line as NSString).length)
+            if config.patternsEnabled && privateKeyBeginRegex.firstMatch(in: line, range: lineRange) != nil {
                 state = STATE_IN_PRIVATE_KEY
                 buffer = [line]
             } else {
@@ -596,7 +670,8 @@ func main() {
         } else {
             buffer.append(line)
 
-            if line.contains(privateKeyEnd) {
+            let lineRange = NSRange(location: 0, length: (line as NSString).length)
+            if privateKeyEndRegex.firstMatch(in: line, range: lineRange) != nil {
                 print("[REDACTED:PRIVATE_KEY:multiline]")
                 fflush(stdout)
                 buffer = []

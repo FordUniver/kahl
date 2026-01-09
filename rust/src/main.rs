@@ -253,7 +253,20 @@ fn redact_env_values(text: &str, secrets: &HashMap<String, String>) -> String {
     result
 }
 
-fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[ContextPattern]) -> String {
+/// Precompiled special patterns for hot path
+struct SpecialPatterns {
+    git_credential: Regex,
+    docker_auth: Regex,
+}
+
+fn build_special_patterns() -> SpecialPatterns {
+    SpecialPatterns {
+        git_credential: Regex::new(GIT_CREDENTIAL_PATTERN.pattern).unwrap(),
+        docker_auth: Regex::new(DOCKER_AUTH_PATTERN.pattern).unwrap(),
+    }
+}
+
+fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[ContextPattern], special: &SpecialPatterns) -> String {
     let mut result = text.to_string();
 
     // Direct patterns
@@ -276,8 +289,7 @@ fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[Context
     }
 
     // Git credential URLs: ://user:password@ -> ://user:[REDACTED]@
-    let git_cred_pattern = Regex::new(GIT_CREDENTIAL_PATTERN.pattern).unwrap();
-    result = git_cred_pattern.replace_all(&result, |caps: &regex::Captures| {
+    result = special.git_credential.replace_all(&result, |caps: &regex::Captures| {
         let prefix = caps.get(1).map_or("", |m| m.as_str());
         let password = caps.get(GIT_CREDENTIAL_PATTERN.secret_group).map_or("", |m| m.as_str());
         let suffix = caps.get(3).map_or("", |m| m.as_str());
@@ -286,8 +298,7 @@ fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[Context
     }).to_string();
 
     // Docker config auth: "auth": "base64" -> "auth": "[REDACTED]"
-    let docker_auth_pattern = Regex::new(DOCKER_AUTH_PATTERN.pattern).unwrap();
-    result = docker_auth_pattern.replace_all(&result, |caps: &regex::Captures| {
+    result = special.docker_auth.replace_all(&result, |caps: &regex::Captures| {
         let prefix = caps.get(1).map_or("", |m| m.as_str());
         let auth = caps.get(DOCKER_AUTH_PATTERN.secret_group).map_or("", |m| m.as_str());
         let suffix = caps.get(3).map_or("", |m| m.as_str());
@@ -426,11 +437,7 @@ struct Token {
 }
 
 /// Extract potential secret tokens from text
-fn extract_tokens(text: &str, min_len: usize, max_len: usize) -> Vec<Token> {
-    // Split on delimiters: whitespace and common punctuation
-    // Regex: [\s"'`()\[\]{},:;<>=@#]+
-    let delim_re = Regex::new(r#"[\s"'`()\[\]{},;:<>=@#]+"#).unwrap();
-
+fn extract_tokens(text: &str, min_len: usize, max_len: usize, delim_re: &Regex) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut pos = 0;
 
@@ -546,8 +553,8 @@ fn build_exclusion_regexes() -> Vec<(Regex, &'static EntropyExclusion)> {
 }
 
 /// Detect and redact high-entropy strings
-fn redact_entropy(text: &str, config: &EntropyConfig, exclusion_regexes: &[(Regex, &EntropyExclusion)]) -> String {
-    let tokens = extract_tokens(text, config.min_length, config.max_length);
+fn redact_entropy(text: &str, config: &EntropyConfig, exclusion_regexes: &[(Regex, &EntropyExclusion)], token_delim_re: &Regex) -> String {
+    let tokens = extract_tokens(text, config.min_length, config.max_length, token_delim_re);
 
     // Collect replacements (process in reverse order to preserve positions)
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
@@ -591,20 +598,24 @@ fn redact_line(
     secrets: &HashMap<String, String>,
     patterns: &[Pattern],
     context_patterns: &[ContextPattern],
+    special_patterns: &SpecialPatterns,
     config: &FilterConfig,
     entropy_config: Option<&EntropyConfig>,
     exclusion_regexes: &[(Regex, &EntropyExclusion)],
+    token_delim_re: Option<&Regex>,
 ) -> String {
     let mut result = line.to_string();
     if config.values {
         result = redact_env_values(&result, secrets);
     }
     if config.patterns {
-        result = redact_patterns(&result, patterns, context_patterns);
+        result = redact_patterns(&result, patterns, context_patterns, special_patterns);
     }
     if config.entropy {
         if let Some(ec) = entropy_config {
-            result = redact_entropy(&result, ec, exclusion_regexes);
+            if let Some(delim) = token_delim_re {
+                result = redact_entropy(&result, ec, exclusion_regexes, delim);
+            }
         }
     }
     result
@@ -615,14 +626,16 @@ fn flush_buffer_redacted(
     secrets: &HashMap<String, String>,
     patterns: &[Pattern],
     context_patterns: &[ContextPattern],
+    special_patterns: &SpecialPatterns,
     config: &FilterConfig,
     entropy_config: Option<&EntropyConfig>,
     exclusion_regexes: &[(Regex, &EntropyExclusion)],
+    token_delim_re: Option<&Regex>,
 ) {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     for line in buffer {
-        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns, config, entropy_config, exclusion_regexes));
+        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns, special_patterns, config, entropy_config, exclusion_regexes, token_delim_re));
     }
     let _ = handle.flush();
 }
@@ -657,6 +670,9 @@ fn main() {
         Vec::new()
     };
 
+    // Special patterns (git credential, docker auth) - always build, cheap if unused
+    let special_patterns = build_special_patterns();
+
     // Private key detection is part of patterns filter
     let private_key_begin = if config.patterns {
         Some(Regex::new(PRIVATE_KEY_BEGIN).unwrap())
@@ -683,6 +699,13 @@ fn main() {
         Vec::new()
     };
 
+    // Token delimiter regex for entropy detection (precompiled)
+    let token_delim_re = if config.entropy {
+        Some(Regex::new(r#"[\s"'`()\[\]{},;:<>=@#]+"#).unwrap())
+    } else {
+        None
+    };
+
     let mut state = STATE_NORMAL;
     let mut buffer: Vec<String> = Vec::new();
 
@@ -698,7 +721,7 @@ fn main() {
 
         // Binary detection: null byte
         if line.contains('\0') {
-            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes);
+            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
             buffer.clear();
             // Passthrough this line and rest
             let _ = write!(stdout_handle, "{}", line);
@@ -721,7 +744,7 @@ fn main() {
                     state = STATE_IN_PRIVATE_KEY;
                     buffer = vec![line];
                 } else {
-                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes));
+                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref()));
                     let _ = stdout_handle.flush();
                 }
             }
@@ -739,7 +762,7 @@ fn main() {
                     buffer.clear();
                     state = STATE_NORMAL;
                 } else if buffer.len() > MAX_PRIVATE_KEY_BUFFER {
-                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes);
+                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
                     buffer.clear();
                     state = STATE_NORMAL;
                 }
@@ -749,5 +772,5 @@ fn main() {
     }
 
     // EOF: flush remaining buffer
-    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes);
+    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
 }
