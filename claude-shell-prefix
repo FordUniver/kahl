@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# CLAUDE_CODE_SHELL_PREFIX wrapper: filter secrets from stdout AND stderr
+#
+# Usage: Set CLAUDE_CODE_SHELL_PREFIX to this script's path
+# Bypass: Add "# allow-secrets" to command for unfiltered output
+#
+# Execution flow:
+#   1. Claude Code calls: claude-shell-prefix "command string"
+#   2. We execute the command via eval
+#   3. stdout and stderr are filtered separately via process substitution
+#   4. Original exit code is preserved
+
+cmd="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FILTER="$SCRIPT_DIR/perl/secrets-filter"
+
+# Bypass: allow-secrets marker skips filtering
+if [[ "$cmd" == *"# allow-secrets"* ]]; then
+  eval "$cmd"
+  exit $?
+fi
+
+# Filter both stdout and stderr separately using process substitution
+# stdout → filter → stdout, stderr → filter → stderr
+eval "$cmd" > >("$FILTER") 2> >("$FILTER" >&2)
+exit_code=$?
+
+# Wait for process substitution subshells to complete
+# (they run asynchronously; without wait, output may be truncated)
+wait
+
+exit $exit_code
