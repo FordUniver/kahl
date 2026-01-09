@@ -68,7 +68,7 @@ test:bun:
   variables:
     IMPL: bun
 
-# Go tests (needs build + has minor failures)
+# Go tests (requires build)
 test:go:
   <<: *test_template
   image: golang:1.23-alpine
@@ -76,10 +76,9 @@ test:go:
     IMPL: go
   before_script:
     - *install_test_deps
-    - cd go && go build -o secrets-filter main.go
-  allow_failure: true
+    - cd go && go build -ldflags="-s -w" -o secrets-filter secrets-filter.go patterns_gen.go
 
-# Rust tests (needs build + has minor failures)
+# Rust tests (requires build)
 test:rust:
   <<: *test_template
   image: rust:1.83-alpine
@@ -89,9 +88,8 @@ test:rust:
     - apk add --no-cache musl-dev
     - *install_test_deps
     - cd rust && cargo build --release && cp target/release/secrets-filter .
-  allow_failure: true
 
-# Swift tests (needs build + has minor failures)
+# Swift tests (requires build)
 test:swift:
   <<: *test_template
   image: swift:6.0
@@ -101,7 +99,6 @@ test:swift:
     - apt-get update && apt-get install -y wget
     - *install_test_deps
     - cd swift && swiftc -O -o secrets-filter main.swift
-  allow_failure: true
 
 # Benchmark job - runs only for passing implementations
 benchmark:

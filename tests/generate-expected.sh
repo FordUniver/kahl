@@ -39,8 +39,7 @@ generate() {
     local output_file="$2"
     local mode="$3"
 
-    local filter_arg=""
-    [[ "$mode" != "all" ]] && filter_arg="--filter=$mode"
+    local filter_arg="--filter=$mode"
 
     local env_cmd
     env_cmd=$(build_env "$mode")

@@ -712,25 +712,30 @@ fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdout_handle = stdout.lock();
+    let mut stdin_handle = stdin.lock();
+    let mut line_buf: Vec<u8> = Vec::new();
 
-    for line_result in stdin.lock().lines() {
-        let line = match line_result {
-            Ok(l) => l + "\n",
+    loop {
+        line_buf.clear();
+        match stdin_handle.read_until(b'\n', &mut line_buf) {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
             Err(_) => break,
-        };
+        }
 
-        // Binary detection: null byte
-        if line.contains('\0') {
+        // Binary detection: null byte (check raw bytes before UTF-8 conversion)
+        if line_buf.contains(&0) {
             flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
             buffer.clear();
-            // Passthrough this line and rest
-            let _ = write!(stdout_handle, "{}", line);
+            // Passthrough this line and rest as raw bytes
+            let _ = stdout_handle.write_all(&line_buf);
             let _ = stdout_handle.flush();
-            for rest in stdin.lock().lines().flatten() {
-                let _ = writeln!(stdout_handle, "{}", rest);
-            }
+            let _ = io::copy(&mut stdin_handle, &mut stdout_handle);
             return;
         }
+
+        // Convert to string (lossy for invalid UTF-8 - rare edge case)
+        let line = String::from_utf8_lossy(&line_buf).into_owned();
 
         match state {
             STATE_NORMAL => {

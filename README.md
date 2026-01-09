@@ -43,11 +43,11 @@ Structure-preserving labels:
 
 - **Backgrounded commands**: Wrapped as `( cmd | filter ) &` to maintain filtering
 - **Stdout redirections**: `cmd > file` writes to file, filter sees nothing (by design—secret not in conversation)
-- **stderr**: Unfiltered (intentional for debugging; errors rarely contain secrets)
+- **stderr**: Filtered via wrapper (same process substitution as stdout)
 
 ## Testing
 
 ```bash
-pytest .claude/tests/test_secrets_filter.py -v
-bash .claude/tests/test_secrets_warn.sh
+cd tests && ./test.sh -q           # Run all tests (7 implementations × 78 tests)
+cd tests && ./test.sh -q python    # Run tests for specific implementation
 ```

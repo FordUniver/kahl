@@ -644,43 +644,83 @@ func main() {
     var state = STATE_NORMAL
     var buffer: [String] = []
 
-    while let line = readLine(strippingNewline: false) {
-        // Binary detection: null byte
-        if line.contains("\0") {
-            flushBufferRedacted(buffer, secrets, config, entropyConfig)
-            buffer = []
-            print(line, terminator: "")
-            // Passthrough rest
-            while let rest = readLine(strippingNewline: false) {
-                print(rest, terminator: "")
-            }
-            return
+    // Read raw bytes to handle binary data correctly (before UTF-8 conversion)
+    let stdinHandle = FileHandle.standardInput
+    let stdoutHandle = FileHandle.standardOutput
+    var pendingData = Data()
+
+    while true {
+        // Read a chunk of data
+        let chunk = stdinHandle.availableData
+        if chunk.isEmpty && pendingData.isEmpty {
+            break // EOF
         }
+        pendingData.append(chunk)
 
-        if state == STATE_NORMAL {
-            // Only detect private key blocks if patterns filter is enabled
-            let lineRange = NSRange(location: 0, length: (line as NSString).length)
-            if config.patternsEnabled && privateKeyBeginRegex.firstMatch(in: line, range: lineRange) != nil {
-                state = STATE_IN_PRIVATE_KEY
-                buffer = [line]
-            } else {
-                print(redactLine(line, secrets, config, entropyConfig), terminator: "")
-                fflush(stdout)
-            }
-        } else {
-            buffer.append(line)
+        // Process complete lines (ending with newline)
+        while let newlineIndex = pendingData.firstIndex(of: UInt8(ascii: "\n")) {
+            let lineEndIndex = pendingData.index(after: newlineIndex)
+            let lineData = pendingData[..<lineEndIndex]
+            pendingData = Data(pendingData[lineEndIndex...])
 
-            let lineRange = NSRange(location: 0, length: (line as NSString).length)
-            if privateKeyEndRegex.firstMatch(in: line, range: lineRange) != nil {
-                print("[REDACTED:PRIVATE_KEY:multiline]")
-                fflush(stdout)
-                buffer = []
-                state = STATE_NORMAL
-            } else if buffer.count > maxPrivateKeyBuffer {
+            // Binary detection: null byte (check raw bytes before UTF-8 conversion)
+            if lineData.contains(0) {
                 flushBufferRedacted(buffer, secrets, config, entropyConfig)
                 buffer = []
-                state = STATE_NORMAL
+                // Passthrough this line and rest as raw bytes
+                stdoutHandle.write(lineData)
+                // Passthrough any pending data
+                if !pendingData.isEmpty {
+                    stdoutHandle.write(pendingData)
+                }
+                // Passthrough rest of stdin
+                while true {
+                    let rest = stdinHandle.availableData
+                    if rest.isEmpty { break }
+                    stdoutHandle.write(rest)
+                }
+                return
             }
+
+            // Convert to string (lossy for invalid UTF-8)
+            let line = String(decoding: lineData, as: UTF8.self)
+
+            if state == STATE_NORMAL {
+                // Only detect private key blocks if patterns filter is enabled
+                let lineRange = NSRange(location: 0, length: (line as NSString).length)
+                if config.patternsEnabled && privateKeyBeginRegex.firstMatch(in: line, range: lineRange) != nil {
+                    state = STATE_IN_PRIVATE_KEY
+                    buffer = [line]
+                } else {
+                    print(redactLine(line, secrets, config, entropyConfig), terminator: "")
+                    fflush(stdout)
+                }
+            } else {
+                buffer.append(line)
+
+                let lineRange = NSRange(location: 0, length: (line as NSString).length)
+                if privateKeyEndRegex.firstMatch(in: line, range: lineRange) != nil {
+                    print("[REDACTED:PRIVATE_KEY:multiline]")
+                    fflush(stdout)
+                    buffer = []
+                    state = STATE_NORMAL
+                } else if buffer.count > maxPrivateKeyBuffer {
+                    flushBufferRedacted(buffer, secrets, config, entropyConfig)
+                    buffer = []
+                    state = STATE_NORMAL
+                }
+            }
+        }
+
+        // If we have pending data but no newline and no more input, process it as final line
+        if chunk.isEmpty && !pendingData.isEmpty {
+            let line = String(decoding: pendingData, as: UTF8.self)
+            if state == STATE_NORMAL {
+                print(redactLine(line, secrets, config, entropyConfig), terminator: "")
+            } else {
+                buffer.append(line)
+            }
+            break
         }
     }
 
