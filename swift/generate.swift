@@ -96,6 +96,7 @@ func main() {
     let patternsDir = (scriptDir as NSString).deletingLastPathComponent + "/patterns"
     let patternsFile = patternsDir + "/patterns.yaml"
     let envFile = patternsDir + "/env.yaml"
+    let entropyFile = patternsDir + "/entropy.yaml"
     let outputFile = scriptDir + "/patterns_gen.swift"
 
     // Verify input files exist
@@ -108,6 +109,7 @@ func main() {
         fputs("Error: \(envFile) not found\n", stderr)
         exit(1)
     }
+    let entropyExists = fm.fileExists(atPath: entropyFile)
 
     // Check yq is available
     let (_, yqStatus) = shell("command -v yq")
@@ -119,6 +121,7 @@ func main() {
     // Compute source hashes
     let patternsHash = fileHash(patternsFile)
     let envHash = fileHash(envFile)
+    let entropyHash = entropyExists ? fileHash(entropyFile) : "none"
 
     // Get timestamp
     let formatter = DateFormatter()
@@ -201,6 +204,7 @@ func main() {
     // Generated: \(timestamp)
     // Source: patterns/patterns.yaml (hash: \(patternsHash))
     //         patterns/env.yaml (hash: \(envHash))
+    //         patterns/entropy.yaml (hash: \(entropyHash))
 
     import Foundation
 
@@ -301,6 +305,124 @@ func main() {
 
     """
 
+    // Parse entropy.yaml and generate entropy config
+    var entropyExclusionCount = 0
+    var entropyContextKeywordCount = 0
+    if entropyExists {
+        // Enabled by default
+        let enabledDefault = yq(".enabled_by_default // false", file: entropyFile)
+        let entropyEnabled = enabledDefault == "true"
+
+        // Thresholds
+        let hexThreshold = yq(".thresholds.hex // 3.0", file: entropyFile)
+        let base64Threshold = yq(".thresholds.base64 // 4.5", file: entropyFile)
+        let alphanumThreshold = yq(".thresholds.alphanumeric // 4.5", file: entropyFile)
+
+        // Token length constraints
+        let minLength = yq(".token_length.min // 16", file: entropyFile)
+        let maxLength = yq(".token_length.max // 256", file: entropyFile)
+
+        output += """
+        // MARK: - Entropy Detection Configuration
+
+        let entropyEnabledDefault: Bool = \(entropyEnabled)
+
+        let entropyThresholds: [String: Double] = [
+            "hex": \(hexThreshold),
+            "base64": \(base64Threshold),
+            "alphanumeric": \(alphanumThreshold)
+        ]
+
+        let entropyMinLength: Int = \(minLength)
+        let entropyMaxLength: Int = \(maxLength)
+
+        struct EntropyExclusion {
+            let pattern: String
+            let label: String
+            let caseInsensitive: Bool
+            let contextKeywords: [String]?
+        }
+
+        let entropyExclusions: [EntropyExclusion] = [
+
+        """
+
+        // Parse exclusions
+        let exclusionCount = Int(yq(".exclusions | length", file: entropyFile)) ?? 0
+        for i in 0..<exclusionCount {
+            let pattern = yq(".exclusions[\(i)].pattern", file: entropyFile)
+            let label = yq(".exclusions[\(i)].label", file: entropyFile)
+            let caseInsensitiveStr = yq(".exclusions[\(i)].case_insensitive // false", file: entropyFile)
+            let caseInsensitive = caseInsensitiveStr == "true"
+
+            // Check for context keywords
+            let keywordsCheck = yq(".exclusions[\(i)].context_keywords // null", file: entropyFile)
+            var keywordsStr = "nil"
+            if keywordsCheck != "null" && !keywordsCheck.isEmpty {
+                let keywordCount = Int(yq(".exclusions[\(i)].context_keywords | length", file: entropyFile)) ?? 0
+                var keywords: [String] = []
+                for j in 0..<keywordCount {
+                    let kw = yq(".exclusions[\(i)].context_keywords[\(j)]", file: entropyFile)
+                    keywords.append("\"\(escapeSwiftString(kw))\"")
+                }
+                keywordsStr = "[\(keywords.joined(separator: ", "))]"
+            }
+
+            let comma = i < exclusionCount - 1 ? "," : ""
+            output += "    EntropyExclusion(pattern: \"\(escapeSwiftString(pattern))\", label: \"\(label)\", caseInsensitive: \(caseInsensitive), contextKeywords: \(keywordsStr))\(comma)\n"
+        }
+        entropyExclusionCount = exclusionCount
+
+        output += """
+        ]
+
+        let entropyContextKeywords: Set<String> = [
+
+        """
+
+        // Parse global context keywords
+        let ctxKeywordCount = Int(yq(".context_keywords | length", file: entropyFile)) ?? 0
+        for i in 0..<ctxKeywordCount {
+            let kw = yq(".context_keywords[\(i)]", file: entropyFile)
+            let comma = i < ctxKeywordCount - 1 ? "," : ""
+            output += "    \"\(escapeSwiftString(kw))\"\(comma)\n"
+        }
+        entropyContextKeywordCount = ctxKeywordCount
+
+        output += """
+        ]
+
+        """
+    } else {
+        // Entropy config not found - generate defaults
+        output += """
+        // MARK: - Entropy Detection Configuration (defaults - entropy.yaml not found)
+
+        let entropyEnabledDefault: Bool = false
+
+        let entropyThresholds: [String: Double] = [
+            "hex": 3.0,
+            "base64": 4.5,
+            "alphanumeric": 4.5
+        ]
+
+        let entropyMinLength: Int = 16
+        let entropyMaxLength: Int = 256
+
+        struct EntropyExclusion {
+            let pattern: String
+            let label: String
+            let caseInsensitive: Bool
+            let contextKeywords: [String]?
+        }
+
+        let entropyExclusions: [EntropyExclusion] = []
+
+        let entropyContextKeywords: Set<String> = []
+
+        """
+    }
+
     // Write output file
     do {
         try output.write(toFile: outputFile, atomically: true, encoding: .utf8)
@@ -310,6 +432,8 @@ func main() {
         print("  - \(specialPatterns.count) special patterns")
         print("  - \(explicitVars.count) explicit env vars")
         print("  - \(envSuffixes.count) env suffixes")
+        print("  - \(entropyExclusionCount) entropy exclusions")
+        print("  - \(entropyContextKeywordCount) entropy context keywords")
     } catch {
         fputs("Error writing \(outputFile): \(error)\n", stderr)
         exit(1)

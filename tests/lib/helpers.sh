@@ -76,7 +76,7 @@ run_in_env() {
     # Build env array - include LANG for Unicode support
     local -a env_vars=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp" "LANG=en_US.UTF-8" "LC_ALL=en_US.UTF-8")
 
-    # Add test secrets for values or all modes
+    # Add test secrets for values or all modes (not entropy-only)
     if [[ "$mode" == "values" || "$mode" == "all" ]]; then
         while IFS= read -r line; do
             [[ -n "$line" ]] && env_vars+=("$line")
@@ -97,7 +97,8 @@ run_impl() {
     shift 2
 
     local -a args=()
-    [[ "$mode" != "all" ]] && args+=("--filter=$mode")
+    # Always pass --filter explicitly (all means all including entropy)
+    args+=("--filter=$mode")
     args+=("$@")
 
     run_in_env "$mode" "$ROOT_DIR/$impl/secrets-filter" "${args[@]}"

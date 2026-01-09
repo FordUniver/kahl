@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 # AUTO-GENERATED FILE - DO NOT EDIT
-# Generated: 2026-01-09T18:46:56Z
+# Generated: 2026-01-09T19:43:18Z
 # Source: patterns/patterns.yaml (81fdf7816541)
 #         patterns/env.yaml (dfab996443dc)
+#         patterns/entropy.yaml (175a873b1a35)
 # Regenerate with: ruby ruby/generate.rb
 
 module PatternsGen
@@ -126,4 +127,62 @@ module PatternsGen
   ENV_SUFFIXES = %w[
     _SECRET _PASSWORD _TOKEN _API_KEY _PRIVATE_KEY _AUTH _CREDENTIAL
   ].freeze
+
+  # Entropy detection configuration
+  ENTROPY_ENABLED_DEFAULT = false
+
+  ENTROPY_THRESHOLDS = {
+    'hex' => 3.0,
+    'base64' => 4.5,
+    'alphanumeric' => 4.5
+  }.freeze
+
+  ENTROPY_MIN_LENGTH = 16
+  ENTROPY_MAX_LENGTH = 256
+
+  ENTROPY_EXCLUSIONS = [
+    {
+      pattern: /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/,
+      label: 'UUID',
+      case_insensitive: true,
+      context_keywords: nil
+    },
+    {
+      pattern: /[a-f0-9]{40}/,
+      label: 'GIT_SHA',
+      case_insensitive: false,
+      context_keywords: ['commit', 'sha', 'hash', 'ref', 'oid', 'blob', 'tree', 'parent', 'HEAD', 'merge']
+    },
+    {
+      pattern: /[a-f0-9]{64}/,
+      label: 'SHA256_HASH',
+      case_insensitive: false,
+      context_keywords: ['sha256', 'image', 'docker', 'digest', 'hash', 'checksum', 'layer']
+    },
+    {
+      pattern: /[a-f0-9]{32}/,
+      label: 'MD5_HASH',
+      case_insensitive: false,
+      context_keywords: ['md5', 'hash', 'checksum', 'etag']
+    },
+    {
+      pattern: /sha256:[a-f0-9]{64}/,
+      label: 'DOCKER_DIGEST',
+      case_insensitive: false,
+      context_keywords: nil
+    },
+    {
+      pattern: /[0-9]+\.[0-9]+\.[0-9]+[a-f0-9]*/,
+      label: 'VERSION_STRING',
+      case_insensitive: false,
+      context_keywords: nil
+    },
+  ].freeze
+
+  ENTROPY_CONTEXT_KEYWORDS = Set.new(%w[
+    commit sha hash checksum etag image
+    docker uuid guid ref oid blob
+    tree digest layer revision version build
+    id
+  ]).freeze
 end

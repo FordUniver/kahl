@@ -1,0 +1,14 @@
+# Charset classification tests
+# Each charset type with high entropy (should redact)
+
+# Hex (threshold 3.0) - random 32-char hex
+hex_key=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+
+# Alphanumeric (threshold 4.5) - random mixed case with numbers
+alnum_key=xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6
+
+# Base64 with + char (threshold 4.5) - note: = is a delimiter
+b64_key=ZkKDkpv7igaXJaRjojfdNpd+27+2esVXAMU4QIRc
+
+# Mixed charset with punctuation (uses alphanumeric threshold 4.5)
+mixed_key=xK9m.NpL2+qR5t/W8vY1zA4bC7dE0fG3

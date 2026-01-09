@@ -16,7 +16,7 @@ OUTPUT="$SCRIPT_DIR/src/patterns_gen.rs"
 command -v yq >/dev/null 2>&1 || { echo "Error: yq is required" >&2; exit 1; }
 
 # Compute source hash for tracking
-patterns_hash=$(cat "$PATTERNS_DIR/patterns.yaml" "$PATTERNS_DIR/env.yaml" 2>/dev/null | shasum -a 256 | cut -c1-12)
+patterns_hash=$(cat "$PATTERNS_DIR/patterns.yaml" "$PATTERNS_DIR/env.yaml" "$PATTERNS_DIR/entropy.yaml" 2>/dev/null | shasum -a 256 | cut -c1-12)
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Helper: format a pattern as a Rust raw string literal
@@ -159,6 +159,102 @@ EOF
     for ((i=0; i<suffix_count; i++)); do
         suffix=$(yq -r ".suffixes[$i]" "$PATTERNS_DIR/env.yaml")
         echo "    \"$suffix\","
+    done
+
+    echo "];"
+    echo ""
+
+    # Entropy configuration from entropy.yaml
+    echo "// Entropy detection configuration from entropy.yaml"
+    echo ""
+
+    # Enabled by default
+    local entropy_enabled
+    entropy_enabled=$(yq '.enabled_by_default // false' "$PATTERNS_DIR/entropy.yaml")
+    echo "pub const ENTROPY_ENABLED_DEFAULT: bool = $entropy_enabled;"
+    echo ""
+
+    # Thresholds
+    local hex_threshold base64_threshold alphanumeric_threshold
+    hex_threshold=$(yq '.thresholds.hex // 3.0' "$PATTERNS_DIR/entropy.yaml")
+    base64_threshold=$(yq '.thresholds.base64 // 4.5' "$PATTERNS_DIR/entropy.yaml")
+    alphanumeric_threshold=$(yq '.thresholds.alphanumeric // 4.5' "$PATTERNS_DIR/entropy.yaml")
+
+    echo "/// Entropy thresholds by character set"
+    echo "pub const ENTROPY_THRESHOLD_HEX: f64 = $hex_threshold;"
+    echo "pub const ENTROPY_THRESHOLD_BASE64: f64 = $base64_threshold;"
+    echo "pub const ENTROPY_THRESHOLD_ALPHANUMERIC: f64 = $alphanumeric_threshold;"
+    echo ""
+
+    # Token length constraints
+    local min_length max_length
+    min_length=$(yq '.token_length.min // 16' "$PATTERNS_DIR/entropy.yaml")
+    max_length=$(yq '.token_length.max // 256' "$PATTERNS_DIR/entropy.yaml")
+
+    echo "/// Token length constraints"
+    echo "pub const ENTROPY_MIN_LENGTH: usize = $min_length;"
+    echo "pub const ENTROPY_MAX_LENGTH: usize = $max_length;"
+    echo ""
+
+    # Exclusion pattern struct
+    echo "/// Entropy exclusion pattern"
+    echo "#[derive(Debug, Clone)]"
+    echo "pub struct EntropyExclusion {"
+    echo "    pub pattern: &'static str,"
+    echo "    pub label: &'static str,"
+    echo "    pub case_insensitive: bool,"
+    echo "    pub context_keywords: Option<&'static [&'static str]>,"
+    echo "}"
+    echo ""
+
+    # Exclusions array
+    echo "/// Exclusion patterns for entropy detection"
+    echo "pub const ENTROPY_EXCLUSIONS: &[EntropyExclusion] = &["
+
+    local exclusion_count
+    exclusion_count=$(yq '.exclusions | length' "$PATTERNS_DIR/entropy.yaml")
+    for ((i=0; i<exclusion_count; i++)); do
+        local excl_pattern excl_label case_insensitive context_kw_count
+        excl_pattern=$(yq -r ".exclusions[$i].pattern" "$PATTERNS_DIR/entropy.yaml")
+        excl_label=$(yq -r ".exclusions[$i].label" "$PATTERNS_DIR/entropy.yaml")
+        case_insensitive=$(yq ".exclusions[$i].case_insensitive // false" "$PATTERNS_DIR/entropy.yaml")
+
+        # Check for context keywords
+        context_kw_count=$(yq ".exclusions[$i].context_keywords | length // 0" "$PATTERNS_DIR/entropy.yaml")
+
+        echo "    EntropyExclusion {"
+        echo "        pattern: $(rust_raw_string "$excl_pattern"),"
+        echo "        label: \"$excl_label\","
+        echo "        case_insensitive: $case_insensitive,"
+
+        if [[ "$context_kw_count" -gt 0 ]]; then
+            echo -n "        context_keywords: Some(&["
+            for ((j=0; j<context_kw_count; j++)); do
+                local kw
+                kw=$(yq -r ".exclusions[$i].context_keywords[$j]" "$PATTERNS_DIR/entropy.yaml")
+                [[ $j -gt 0 ]] && echo -n ", "
+                echo -n "\"$kw\""
+            done
+            echo "]),"
+        else
+            echo "        context_keywords: None,"
+        fi
+        echo "    },"
+    done
+
+    echo "];"
+    echo ""
+
+    # Context keywords
+    echo "/// Global context keywords for entropy detection"
+    echo "pub const ENTROPY_CONTEXT_KEYWORDS: &[&str] = &["
+
+    local ctx_kw_count
+    ctx_kw_count=$(yq '.context_keywords | length' "$PATTERNS_DIR/entropy.yaml")
+    for ((i=0; i<ctx_kw_count; i++)); do
+        local kw
+        kw=$(yq -r ".context_keywords[$i]" "$PATTERNS_DIR/entropy.yaml")
+        echo "    \"$kw\","
     done
 
     echo "];"

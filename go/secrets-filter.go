@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	gomath "math"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -17,6 +19,7 @@ import (
 type FilterConfig struct {
 	ValuesEnabled   bool
 	PatternsEnabled bool
+	EntropyEnabled  bool
 }
 
 const (
@@ -148,11 +151,18 @@ func isFalsy(val string) bool {
 	return lower == "0" || lower == "false" || lower == "no"
 }
 
+// isTruthy checks if a string represents a truthy boolean value
+func isTruthy(val string) bool {
+	lower := strings.ToLower(strings.TrimSpace(val))
+	return lower == "1" || lower == "true" || lower == "yes"
+}
+
 // parseFilterConfig parses filter configuration from CLI args and environment
 func parseFilterConfig() FilterConfig {
 	config := FilterConfig{
 		ValuesEnabled:   true,
 		PatternsEnabled: true,
+		EntropyEnabled:  false, // Entropy is off by default
 	}
 
 	// Check for --filter or -f in args
@@ -176,6 +186,7 @@ func parseFilterConfig() FilterConfig {
 		// CLI flag overrides environment entirely
 		config.ValuesEnabled = false
 		config.PatternsEnabled = false
+		config.EntropyEnabled = false
 
 		var validFound bool
 		var invalidFilters []string
@@ -190,9 +201,13 @@ func parseFilterConfig() FilterConfig {
 			case "patterns":
 				config.PatternsEnabled = true
 				validFound = true
+			case "entropy":
+				config.EntropyEnabled = true
+				validFound = true
 			case "all":
 				config.ValuesEnabled = true
 				config.PatternsEnabled = true
+				config.EntropyEnabled = true
 				validFound = true
 			default:
 				if filter != "" {
@@ -218,6 +233,12 @@ func parseFilterConfig() FilterConfig {
 		}
 		if val := os.Getenv("SECRETS_FILTER_PATTERNS"); val != "" && isFalsy(val) {
 			config.PatternsEnabled = false
+		}
+		// Entropy: enabled by ENTROPY_ENABLED_DEFAULT or SECRETS_FILTER_ENTROPY=1
+		if val := os.Getenv("SECRETS_FILTER_ENTROPY"); val != "" && isTruthy(val) {
+			config.EntropyEnabled = true
+		} else if EntropyEnabledDefault {
+			config.EntropyEnabled = true
 		}
 	}
 
@@ -300,13 +321,420 @@ func redactPatterns(text string) string {
 	return text
 }
 
+// ============================================================================
+// Entropy-based detection
+// ============================================================================
+
+// EntropyConfig holds runtime entropy configuration (with env var overrides)
+type EntropyConfig struct {
+	Thresholds map[string]float64
+	MinLength  int
+	MaxLength  int
+}
+
+// Token represents a potential secret token with its position
+type Token struct {
+	Value string
+	Start int
+	End   int
+}
+
+// shannonEntropy calculates Shannon entropy of a string in bits
+func shannonEntropy(s string) float64 {
+	if len(s) == 0 {
+		return 0.0
+	}
+
+	counts := make(map[rune]int)
+	for _, r := range s {
+		counts[r]++
+	}
+
+	length := float64(len(s))
+	entropy := 0.0
+	for _, count := range counts {
+		p := float64(count) / length
+		entropy -= p * log2(p)
+	}
+	return entropy
+}
+
+// log2 returns log base 2 of x
+func log2(x float64) float64 {
+	return ln(x) / ln(2)
+}
+
+// ln returns natural logarithm of x
+func ln(x float64) float64 {
+	// Use Go's math package
+	return gomath.Log(x)
+}
+
+// Hex character set (lowercase)
+var hexChars = map[rune]bool{
+	'0': true, '1': true, '2': true, '3': true, '4': true,
+	'5': true, '6': true, '7': true, '8': true, '9': true,
+	'a': true, 'b': true, 'c': true, 'd': true, 'e': true, 'f': true,
+}
+
+// Base64 character set
+var base64Chars = map[rune]bool{}
+
+// Alphanumeric character set (A-Za-z0-9_-)
+var alnumChars = map[rune]bool{}
+
+func init() {
+	// Initialize base64 charset
+	for _, c := range "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" {
+		base64Chars[c] = true
+	}
+	// Initialize alphanumeric charset
+	for _, c := range "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-" {
+		alnumChars[c] = true
+	}
+}
+
+// classifyCharset determines the character set of a string
+func classifyCharset(s string) string {
+	lower := strings.ToLower(s)
+
+	// Check hex first (most restrictive)
+	isHex := true
+	for _, r := range lower {
+		if !hexChars[r] {
+			isHex = false
+			break
+		}
+	}
+	if isHex {
+		return "hex"
+	}
+
+	// Check alphanumeric
+	isAlnum := true
+	for _, r := range s {
+		if !alnumChars[r] {
+			isAlnum = false
+			break
+		}
+	}
+	if isAlnum {
+		return "alphanumeric"
+	}
+
+	// Check base64
+	isBase64 := true
+	for _, r := range s {
+		if !base64Chars[r] {
+			isBase64 = false
+			break
+		}
+	}
+	if isBase64 {
+		return "base64"
+	}
+
+	return "mixed"
+}
+
+// Token delimiter regex
+var tokenDelimRe = regexp.MustCompile(`[\s"'` + "`" + `()\[\]{},:;<>=@#]+`)
+
+// extractTokens splits text into potential secret tokens
+func extractTokens(text string, minLen, maxLen int) []Token {
+	var tokens []Token
+
+	// Split by delimiters
+	parts := tokenDelimRe.Split(text, -1)
+	pos := 0
+
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		// Find actual position in text
+		start := strings.Index(text[pos:], part)
+		if start == -1 {
+			continue
+		}
+		start += pos
+		end := start + len(part)
+		pos = end
+
+		// Filter by length
+		if len(part) < minLen || len(part) > maxLen {
+			continue
+		}
+
+		// Skip if all alphabetic (variable names)
+		allAlpha := true
+		for _, r := range part {
+			if !unicode.IsLetter(r) {
+				allAlpha = false
+				break
+			}
+		}
+		if allAlpha {
+			continue
+		}
+
+		// Skip if all numeric (IDs, line numbers)
+		allDigit := true
+		for _, r := range part {
+			if !unicode.IsDigit(r) {
+				allDigit = false
+				break
+			}
+		}
+		if allDigit {
+			continue
+		}
+
+		// Skip if contains whitespace
+		hasWhitespace := false
+		for _, r := range part {
+			if unicode.IsSpace(r) {
+				hasWhitespace = true
+				break
+			}
+		}
+		if hasWhitespace {
+			continue
+		}
+
+		tokens = append(tokens, Token{Value: part, Start: start, End: end})
+	}
+
+	return tokens
+}
+
+// hasContextKeyword checks if a position in text is preceded by a context keyword
+func hasContextKeyword(text string, pos int, keywords []string) bool {
+	if len(keywords) == 0 {
+		return false
+	}
+
+	// Look back up to 50 chars
+	start := pos - 50
+	if start < 0 {
+		start = 0
+	}
+	prefix := strings.ToLower(text[start:pos])
+
+	for _, kw := range keywords {
+		if strings.Contains(prefix, strings.ToLower(kw)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Compiled exclusion patterns (lazy initialized)
+var compiledExclusions []struct {
+	regex           *regexp.Regexp
+	label           string
+	contextKeywords []string
+}
+var exclusionsCompiled bool
+
+func getCompiledExclusions() []struct {
+	regex           *regexp.Regexp
+	label           string
+	contextKeywords []string
+} {
+	if !exclusionsCompiled {
+		for _, excl := range EntropyExclusions {
+			pattern := excl.Pattern
+			if excl.CaseInsensitive {
+				pattern = "(?i)" + pattern
+			}
+			re, err := regexp.Compile("^" + pattern + "$")
+			if err != nil {
+				continue
+			}
+			compiledExclusions = append(compiledExclusions, struct {
+				regex           *regexp.Regexp
+				label           string
+				contextKeywords []string
+			}{
+				regex:           re,
+				label:           excl.Label,
+				contextKeywords: excl.ContextKeywords,
+			})
+		}
+		exclusionsCompiled = true
+	}
+	return compiledExclusions
+}
+
+// matchesExclusion checks if a token matches an exclusion pattern
+// Returns the label if excluded, empty string otherwise
+func matchesExclusion(token, text string, pos int) string {
+	for _, excl := range getCompiledExclusions() {
+		if excl.regex.MatchString(token) {
+			// Check context keywords if present
+			if len(excl.contextKeywords) > 0 {
+				if hasContextKeyword(text, pos, excl.contextKeywords) {
+					return excl.label
+				}
+				// Has context keywords but none found - not excluded
+				continue
+			}
+			// No context keywords required - excluded
+			return excl.label
+		}
+	}
+
+	// Check global context keywords
+	var globalKeywords []string
+	for kw := range EntropyContextKeywords {
+		globalKeywords = append(globalKeywords, kw)
+	}
+	if hasContextKeyword(text, pos, globalKeywords) {
+		return "CONTEXT"
+	}
+
+	return ""
+}
+
+// describeEntropyStructure creates structure description for entropy redaction
+func describeEntropyStructure(token string, entropy float64, charset string) string {
+	charsetAbbrev := map[string]string{
+		"hex":          "hex",
+		"base64":       "b64",
+		"alphanumeric": "alnum",
+		"mixed":        "mix",
+	}
+	abbrev := charsetAbbrev[charset]
+	if abbrev == "" {
+		abbrev = charset
+	}
+	return fmt.Sprintf("%s:%d:%.1f", abbrev, len(token), entropy)
+}
+
+// getEntropyConfig gets entropy configuration with environment variable overrides
+func getEntropyConfig() EntropyConfig {
+	config := EntropyConfig{
+		Thresholds: make(map[string]float64),
+		MinLength:  EntropyMinLength,
+		MaxLength:  EntropyMaxLength,
+	}
+
+	// Copy default thresholds
+	for k, v := range EntropyThresholds {
+		config.Thresholds[k] = v
+	}
+
+	// Check for global threshold override
+	if val := os.Getenv("SECRETS_FILTER_ENTROPY_THRESHOLD"); val != "" {
+		var t float64
+		if _, err := fmt.Sscanf(val, "%f", &t); err == nil {
+			config.Thresholds["hex"] = t
+			config.Thresholds["base64"] = t
+			config.Thresholds["alphanumeric"] = t
+		}
+	}
+
+	// Check for per-charset overrides
+	if val := os.Getenv("SECRETS_FILTER_ENTROPY_HEX"); val != "" {
+		var t float64
+		if _, err := fmt.Sscanf(val, "%f", &t); err == nil {
+			config.Thresholds["hex"] = t
+		}
+	}
+	if val := os.Getenv("SECRETS_FILTER_ENTROPY_BASE64"); val != "" {
+		var t float64
+		if _, err := fmt.Sscanf(val, "%f", &t); err == nil {
+			config.Thresholds["base64"] = t
+		}
+	}
+
+	// Length overrides
+	if val := os.Getenv("SECRETS_FILTER_ENTROPY_MIN_LEN"); val != "" {
+		var n int
+		if _, err := fmt.Sscanf(val, "%d", &n); err == nil {
+			config.MinLength = n
+		}
+	}
+	if val := os.Getenv("SECRETS_FILTER_ENTROPY_MAX_LEN"); val != "" {
+		var n int
+		if _, err := fmt.Sscanf(val, "%d", &n); err == nil {
+			config.MaxLength = n
+		}
+	}
+
+	return config
+}
+
+// redactEntropy detects and redacts high-entropy strings
+func redactEntropy(text string, config EntropyConfig) string {
+	tokens := extractTokens(text, config.MinLength, config.MaxLength)
+
+	// Process in reverse order to preserve positions when replacing
+	type replacement struct {
+		start int
+		end   int
+		text  string
+	}
+	var replacements []replacement
+
+	for i := len(tokens) - 1; i >= 0; i-- {
+		token := tokens[i]
+
+		// Check exclusions
+		if excluded := matchesExclusion(token.Value, text, token.Start); excluded != "" {
+			continue
+		}
+
+		// Classify character set and get threshold
+		charset := classifyCharset(token.Value)
+		var threshold float64
+		if charset == "mixed" {
+			// Mixed character sets - use alphanumeric threshold
+			threshold = config.Thresholds["alphanumeric"]
+			if threshold == 0 {
+				threshold = 4.5
+			}
+		} else {
+			threshold = config.Thresholds[charset]
+			if threshold == 0 {
+				threshold = 4.5
+			}
+		}
+
+		// Calculate entropy
+		entropy := shannonEntropy(token.Value)
+
+		if entropy >= threshold {
+			structure := describeEntropyStructure(token.Value, entropy, charset)
+			repl := fmt.Sprintf("[REDACTED:HIGH_ENTROPY:%s]", structure)
+			replacements = append(replacements, replacement{
+				start: token.Start,
+				end:   token.End,
+				text:  repl,
+			})
+		}
+	}
+
+	// Apply replacements (already in reverse order)
+	for _, r := range replacements {
+		text = text[:r.start] + r.text + text[r.end:]
+	}
+
+	return text
+}
+
 // redactLine applies all redaction to a single line based on config
-func redactLine(line string, secrets map[string]string, config FilterConfig) string {
+func redactLine(line string, secrets map[string]string, config FilterConfig, entropyConfig EntropyConfig) string {
 	if config.ValuesEnabled && secrets != nil {
 		line = redactEnvValues(line, secrets)
 	}
 	if config.PatternsEnabled {
 		line = redactPatterns(line)
+	}
+	if config.EntropyEnabled {
+		line = redactEntropy(line, entropyConfig)
 	}
 	return line
 }
@@ -318,6 +746,12 @@ func main() {
 	var secrets map[string]string
 	if config.ValuesEnabled {
 		secrets = loadSecrets()
+	}
+
+	// Only load entropy config if entropy filter is enabled
+	var entropyConfig EntropyConfig
+	if config.EntropyEnabled {
+		entropyConfig = getEntropyConfig()
 	}
 
 	state := StateNormal
@@ -341,7 +775,7 @@ func main() {
 		if bytes.Contains([]byte(line), []byte{0}) {
 			// Flush buffer
 			for _, l := range buffer {
-				fmt.Print(redactLine(l, secrets, config))
+				fmt.Print(redactLine(l, secrets, config, entropyConfig))
 			}
 			buffer = nil
 			// Passthrough this line and rest
@@ -356,7 +790,7 @@ func main() {
 				state = StateInPrivateKey
 				buffer = []string{line}
 			} else {
-				fmt.Print(redactLine(line, secrets, config))
+				fmt.Print(redactLine(line, secrets, config, entropyConfig))
 			}
 
 		case StateInPrivateKey:
@@ -368,7 +802,7 @@ func main() {
 				state = StateNormal
 			} else if len(buffer) > MaxPrivateKeyBuffer {
 				for _, l := range buffer {
-					fmt.Print(redactLine(l, secrets, config))
+					fmt.Print(redactLine(l, secrets, config, entropyConfig))
 				}
 				buffer = nil
 				state = StateNormal
@@ -383,6 +817,6 @@ func main() {
 
 	// EOF: flush remaining buffer
 	for _, l := range buffer {
-		fmt.Print(redactLine(l, secrets, config))
+		fmt.Print(redactLine(l, secrets, config, entropyConfig))
 	}
 }

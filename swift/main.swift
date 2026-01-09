@@ -5,11 +5,20 @@
 // Filter modes:
 //   --filter=values    - redact known secret values from environment
 //   --filter=patterns  - redact regex patterns (token formats)
-//   --filter=all       - shorthand for both (default)
+//   --filter=entropy   - redact high-entropy strings (opt-in, off by default)
+//   --filter=all       - all filters (values + patterns + entropy)
 //
 // Environment variables (override with --filter):
 //   SECRETS_FILTER_VALUES=0|false|no    - disable values filter
 //   SECRETS_FILTER_PATTERNS=0|false|no  - disable patterns filter
+//   SECRETS_FILTER_ENTROPY=1|true|yes   - enable entropy filter (off by default)
+//
+// Entropy filter options (env vars):
+//   SECRETS_FILTER_ENTROPY_THRESHOLD=N   - override all thresholds
+//   SECRETS_FILTER_ENTROPY_HEX=N         - hex-specific threshold (default: 3.0)
+//   SECRETS_FILTER_ENTROPY_BASE64=N      - base64-specific threshold (default: 4.5)
+//   SECRETS_FILTER_ENTROPY_MIN_LEN=N     - minimum token length (default: 16)
+//   SECRETS_FILTER_ENTROPY_MAX_LEN=N     - maximum token length (default: 256)
 
 import Foundation
 
@@ -17,6 +26,7 @@ import Foundation
 struct FilterConfig {
     var valuesEnabled: Bool = true
     var patternsEnabled: Bool = true
+    var entropyEnabled: Bool = false
 }
 
 // Check if a value is falsy (0, false, no)
@@ -25,10 +35,16 @@ func isFalsy(_ value: String) -> Bool {
     return ["0", "false", "no"].contains(lower)
 }
 
+// Check if a value is truthy (1, true, yes)
+func isTruthy(_ value: String) -> Bool {
+    let lower = value.lowercased()
+    return ["1", "true", "yes"].contains(lower)
+}
+
 // Parse --filter CLI arguments
 // Returns: (config, hadValidFilter) or nil if error (all invalid filters)
 func parseFilterArgs() -> (FilterConfig, Bool)? {
-    var config = FilterConfig(valuesEnabled: false, patternsEnabled: false)
+    var config = FilterConfig(valuesEnabled: false, patternsEnabled: false, entropyEnabled: false)
     var hadFilterArg = false
     var hadValidFilter = false
 
@@ -57,14 +73,19 @@ func parseFilterArgs() -> (FilterConfig, Bool)? {
         for filter in filters {
             switch filter {
             case "all":
+                // 'all' means all filters (values + patterns + entropy)
                 config.valuesEnabled = true
                 config.patternsEnabled = true
+                config.entropyEnabled = true
                 hadValidFilter = true
             case "values":
                 config.valuesEnabled = true
                 hadValidFilter = true
             case "patterns":
                 config.patternsEnabled = true
+                hadValidFilter = true
+            case "entropy":
+                config.entropyEnabled = true
                 hadValidFilter = true
             default:
                 fputs("secrets-filter: unknown filter '\(filter)', ignoring\n", stderr)
@@ -89,6 +110,11 @@ func parseFilterEnv() -> FilterConfig {
     }
     if let value = ProcessInfo.processInfo.environment["SECRETS_FILTER_PATTERNS"], isFalsy(value) {
         config.patternsEnabled = false
+    }
+    // Entropy is disabled by default, enable via env or default from config
+    config.entropyEnabled = entropyEnabledDefault
+    if let value = ProcessInfo.processInfo.environment["SECRETS_FILTER_ENTROPY"], isTruthy(value) {
+        config.entropyEnabled = true
     }
 
     return config
@@ -252,8 +278,262 @@ func redactPatterns(_ text: String) -> String {
     return result
 }
 
+// MARK: - Entropy Detection
+
+// Entropy configuration with runtime overrides
+struct EntropyConfig {
+    var thresholds: [String: Double]
+    var minLength: Int
+    var maxLength: Int
+}
+
+// Character sets for classification
+let charsetHex = Set("0123456789abcdef")
+let charsetBase64 = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+let charsetAlnum = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+
+// Token extraction regex: split on delimiters
+let tokenDelimRegex = try! Regex("[\\s\"'`()\\[\\]{},:;<>=@#]+")
+
+// Precompile exclusion patterns
+struct CompiledExclusion {
+    let regex: Regex<AnyRegexOutput>
+    let label: String
+    let contextKeywords: [String]?
+}
+
+let compiledExclusions: [CompiledExclusion] = entropyExclusions.map { (excl: EntropyExclusion) -> CompiledExclusion in
+    let regex: Regex<AnyRegexOutput>
+    if excl.caseInsensitive {
+        regex = try! Regex(excl.pattern).ignoresCase()
+    } else {
+        regex = try! Regex(excl.pattern)
+    }
+    return CompiledExclusion(regex: regex, label: excl.label, contextKeywords: excl.contextKeywords)
+}
+
+// Calculate Shannon entropy in bits
+func shannonEntropy(_ s: String) -> Double {
+    if s.isEmpty { return 0.0 }
+
+    // Count character occurrences
+    var counts: [Character: Int] = [:]
+    for c in s {
+        counts[c, default: 0] += 1
+    }
+
+    let length = Double(s.count)
+    var entropy = 0.0
+    for count in counts.values {
+        let p = Double(count) / length
+        entropy -= p * log2(p)
+    }
+    return entropy
+}
+
+// Classify a string's character set
+func classifyCharset(_ s: String) -> String {
+    let chars = Set(s.lowercased())
+
+    // Check hex first (most restrictive)
+    if chars.isSubset(of: charsetHex) {
+        return "hex"
+    }
+
+    // Check alphanumeric (common for tokens)
+    let upperChars = Set(s)
+    if upperChars.isSubset(of: charsetAlnum) {
+        return "alphanumeric"
+    }
+
+    // Check base64
+    if upperChars.isSubset(of: charsetBase64) {
+        return "base64"
+    }
+
+    return "mixed"
+}
+
+// Extract potential secret tokens from text
+func extractTokens(_ text: String, minLen: Int, maxLen: Int) -> [(token: String, start: Int, end: Int)] {
+    var tokens: [(String, Int, Int)] = []
+
+    // Split by delimiters while tracking positions
+    var pos = text.startIndex
+    let parts = text.split(separator: tokenDelimRegex, omittingEmptySubsequences: true)
+
+    for part in parts {
+        let partStr = String(part)
+
+        // Find position in original text
+        if let range = text.range(of: partStr, range: pos..<text.endIndex) {
+            let start = text.distance(from: text.startIndex, to: range.lowerBound)
+            let end = text.distance(from: text.startIndex, to: range.upperBound)
+            pos = range.upperBound
+
+            // Filter by length
+            if partStr.count < minLen || partStr.count > maxLen {
+                continue
+            }
+
+            // Skip if all alphabetic (variable names)
+            if partStr.allSatisfy({ $0.isLetter }) {
+                continue
+            }
+
+            // Skip if all numeric (IDs, line numbers)
+            if partStr.allSatisfy({ $0.isNumber }) {
+                continue
+            }
+
+            // Skip if contains whitespace
+            if partStr.contains(where: { $0.isWhitespace }) {
+                continue
+            }
+
+            tokens.append((partStr, start, end))
+        }
+    }
+
+    return tokens
+}
+
+// Check if a position in text is preceded by a context keyword
+func hasContextKeyword(_ text: String, pos: Int, keywords: [String]) -> Bool {
+    if keywords.isEmpty { return false }
+
+    // Look back up to 50 chars
+    let startIdx = text.index(text.startIndex, offsetBy: max(0, pos - 50))
+    let endIdx = text.index(text.startIndex, offsetBy: pos)
+    let prefix = String(text[startIdx..<endIdx]).lowercased()
+
+    for kw in keywords {
+        if prefix.contains(kw.lowercased()) {
+            return true
+        }
+    }
+
+    return false
+}
+
+// Check if token matches an exclusion pattern
+func matchesExclusion(_ token: String, text: String, pos: Int) -> String? {
+    for excl in compiledExclusions {
+        // Check if token fully matches the exclusion pattern
+        if (try? excl.regex.wholeMatch(in: token)) != nil {
+            // Check context keywords if present
+            if let contextKw = excl.contextKeywords {
+                if hasContextKeyword(text, pos: pos, keywords: contextKw) {
+                    return excl.label
+                }
+                // Has context keywords but none found - not excluded
+                continue
+            }
+            // No context keywords required - excluded
+            return excl.label
+        }
+    }
+
+    // Check global context keywords
+    if hasContextKeyword(text, pos: pos, keywords: Array(entropyContextKeywords)) {
+        return "CONTEXT"
+    }
+
+    return nil
+}
+
+// Create structure description for entropy redaction
+func describeEntropyStructure(_ token: String, entropy: Double, charset: String) -> String {
+    let charsetAbbrev: String
+    switch charset {
+    case "hex": charsetAbbrev = "hex"
+    case "base64": charsetAbbrev = "b64"
+    case "alphanumeric": charsetAbbrev = "alnum"
+    default: charsetAbbrev = "mix"
+    }
+    return "\(charsetAbbrev):\(token.count):\(String(format: "%.1f", entropy))"
+}
+
+// Get entropy configuration from environment overrides or defaults
+func getEntropyConfig() -> EntropyConfig {
+    var config = EntropyConfig(
+        thresholds: entropyThresholds,
+        minLength: entropyMinLength,
+        maxLength: entropyMaxLength
+    )
+
+    let env = ProcessInfo.processInfo.environment
+
+    // Check for global threshold override
+    if let globalThreshold = env["SECRETS_FILTER_ENTROPY_THRESHOLD"], let t = Double(globalThreshold) {
+        config.thresholds = ["hex": t, "base64": t, "alphanumeric": t]
+    }
+
+    // Check for per-charset overrides
+    if let hexVal = env["SECRETS_FILTER_ENTROPY_HEX"], let t = Double(hexVal) {
+        config.thresholds["hex"] = t
+    }
+    if let base64Val = env["SECRETS_FILTER_ENTROPY_BASE64"], let t = Double(base64Val) {
+        config.thresholds["base64"] = t
+    }
+
+    // Length overrides
+    if let minLenVal = env["SECRETS_FILTER_ENTROPY_MIN_LEN"], let n = Int(minLenVal) {
+        config.minLength = n
+    }
+    if let maxLenVal = env["SECRETS_FILTER_ENTROPY_MAX_LEN"], let n = Int(maxLenVal) {
+        config.maxLength = n
+    }
+
+    return config
+}
+
+// Detect and redact high-entropy strings
+func redactEntropy(_ text: String, config: EntropyConfig) -> String {
+    let tokens = extractTokens(text, minLen: config.minLength, maxLen: config.maxLength)
+
+    // Process in reverse order to preserve positions when replacing
+    var result = text
+    var replacements: [(start: Int, end: Int, replacement: String)] = []
+
+    for (token, start, end) in tokens.reversed() {
+        // Check exclusions
+        if matchesExclusion(token, text: text, pos: start) != nil {
+            continue
+        }
+
+        // Classify character set and get threshold
+        let charset = classifyCharset(token)
+        let threshold: Double
+        if charset == "mixed" {
+            // Mixed character sets - use alphanumeric threshold
+            threshold = config.thresholds["alphanumeric"] ?? 4.5
+        } else {
+            threshold = config.thresholds[charset] ?? 4.5
+        }
+
+        // Calculate entropy
+        let entropy = shannonEntropy(token)
+
+        if entropy >= threshold {
+            let structure = describeEntropyStructure(token, entropy: entropy, charset: charset)
+            let replacement = "[REDACTED:HIGH_ENTROPY:\(structure)]"
+            replacements.append((start, end, replacement))
+        }
+    }
+
+    // Apply replacements in reverse order
+    for (start, end, replacement) in replacements {
+        let startIdx = result.index(result.startIndex, offsetBy: start)
+        let endIdx = result.index(result.startIndex, offsetBy: end)
+        result.replaceSubrange(startIdx..<endIdx, with: replacement)
+    }
+
+    return result
+}
+
 // Redact a single line based on filter config
-func redactLine(_ line: String, _ secrets: [String: String], _ config: FilterConfig) -> String {
+func redactLine(_ line: String, _ secrets: [String: String], _ config: FilterConfig, _ entropyConfig: EntropyConfig?) -> String {
     var result = line
     if config.valuesEnabled {
         result = redactEnvValues(result, secrets)
@@ -261,13 +541,16 @@ func redactLine(_ line: String, _ secrets: [String: String], _ config: FilterCon
     if config.patternsEnabled {
         result = redactPatterns(result)
     }
+    if config.entropyEnabled, let ec = entropyConfig {
+        result = redactEntropy(result, config: ec)
+    }
     return result
 }
 
 // Flush buffer with redaction
-func flushBufferRedacted(_ buffer: [String], _ secrets: [String: String], _ config: FilterConfig) {
+func flushBufferRedacted(_ buffer: [String], _ secrets: [String: String], _ config: FilterConfig, _ entropyConfig: EntropyConfig?) {
     for line in buffer {
-        print(redactLine(line, secrets, config), terminator: "")
+        print(redactLine(line, secrets, config, entropyConfig), terminator: "")
         fflush(stdout)
     }
 }
@@ -282,13 +565,16 @@ func main() {
     // Load secrets only if values filter is enabled
     let secrets: [String: String] = config.valuesEnabled ? loadSecrets() : [:]
 
+    // Load entropy config only if entropy filter is enabled
+    let entropyConfig: EntropyConfig? = config.entropyEnabled ? getEntropyConfig() : nil
+
     var state = STATE_NORMAL
     var buffer: [String] = []
 
     while let line = readLine(strippingNewline: false) {
         // Binary detection: null byte
         if line.contains("\0") {
-            flushBufferRedacted(buffer, secrets, config)
+            flushBufferRedacted(buffer, secrets, config, entropyConfig)
             buffer = []
             print(line, terminator: "")
             // Passthrough rest
@@ -304,7 +590,7 @@ func main() {
                 state = STATE_IN_PRIVATE_KEY
                 buffer = [line]
             } else {
-                print(redactLine(line, secrets, config), terminator: "")
+                print(redactLine(line, secrets, config, entropyConfig), terminator: "")
                 fflush(stdout)
             }
         } else {
@@ -316,7 +602,7 @@ func main() {
                 buffer = []
                 state = STATE_NORMAL
             } else if buffer.count > maxPrivateKeyBuffer {
-                flushBufferRedacted(buffer, secrets, config)
+                flushBufferRedacted(buffer, secrets, config, entropyConfig)
                 buffer = []
                 state = STATE_NORMAL
             }
@@ -325,7 +611,7 @@ func main() {
 
     // EOF: flush remaining buffer
     if !buffer.isEmpty {
-        flushBufferRedacted(buffer, secrets, config)
+        flushBufferRedacted(buffer, secrets, config, entropyConfig)
     }
 }
 

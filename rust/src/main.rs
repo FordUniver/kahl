@@ -2,11 +2,12 @@
 // Build: cargo build --release
 //
 // Filter modes:
-//   --filter=values,patterns  (CLI, comma-separated, case-insensitive)
+//   --filter=values,patterns,entropy  (CLI, comma-separated, case-insensitive)
 //   SECRETS_FILTER_VALUES=0|false|no  (ENV, disables values filter)
 //   SECRETS_FILTER_PATTERNS=0|false|no  (ENV, disables patterns filter)
+//   SECRETS_FILTER_ENTROPY=1|true|yes  (ENV, enables entropy filter, off by default)
 //
-// Default: both enabled. CLI overrides ENV entirely.
+// Default: values + patterns enabled, entropy disabled. CLI overrides ENV entirely.
 
 mod patterns_gen;
 use patterns_gen::*;
@@ -20,6 +21,7 @@ use std::io::{self, BufRead, Write};
 struct FilterConfig {
     values: bool,
     patterns: bool,
+    entropy: bool,
 }
 
 impl Default for FilterConfig {
@@ -27,6 +29,7 @@ impl Default for FilterConfig {
         Self {
             values: true,
             patterns: true,
+            entropy: ENTROPY_ENABLED_DEFAULT,
         }
     }
 }
@@ -34,6 +37,11 @@ impl Default for FilterConfig {
 /// Check if a string value is falsy (0, false, no)
 fn is_falsy(val: &str) -> bool {
     matches!(val.to_lowercase().as_str(), "0" | "false" | "no")
+}
+
+/// Check if a string value is truthy (1, true, yes)
+fn is_truthy(val: &str) -> bool {
+    matches!(val.to_lowercase().as_str(), "1" | "true" | "yes")
 }
 
 /// Parse filter configuration from CLI args and environment
@@ -60,6 +68,7 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
         // CLI overrides ENV entirely
         let mut values = false;
         let mut patterns = false;
+        let mut entropy = false;
         let mut valid_count = 0;
 
         for part in filter_str.split(',') {
@@ -73,9 +82,15 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
                     patterns = true;
                     valid_count += 1;
                 }
+                "entropy" => {
+                    entropy = true;
+                    valid_count += 1;
+                }
                 "all" => {
+                    // 'all' means all filters
                     values = true;
                     patterns = true;
+                    entropy = true;
                     valid_count += 1;
                 }
                 "" => {} // ignore empty parts
@@ -89,7 +104,7 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
             return Err("secrets-filter: no valid filters specified".to_string());
         }
 
-        Ok(FilterConfig { values, patterns })
+        Ok(FilterConfig { values, patterns, entropy })
     } else {
         // Use ENV variables
         let values = env::var("SECRETS_FILTER_VALUES")
@@ -100,7 +115,12 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
             .map(|v| !is_falsy(&v))
             .unwrap_or(true);
 
-        Ok(FilterConfig { values, patterns })
+        // Entropy is disabled by default, can be enabled via env var
+        let entropy = env::var("SECRETS_FILTER_ENTROPY")
+            .map(|v| is_truthy(&v))
+            .unwrap_or(ENTROPY_ENABLED_DEFAULT);
+
+        Ok(FilterConfig { values, patterns, entropy })
     }
 }
 
@@ -278,12 +298,302 @@ fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[Context
     result
 }
 
+// ============================================================================
+// Entropy-based detection
+// ============================================================================
+
+/// Entropy detection configuration (can be overridden via env vars)
+#[derive(Debug, Clone)]
+struct EntropyConfig {
+    threshold_hex: f64,
+    threshold_base64: f64,
+    threshold_alphanumeric: f64,
+    min_length: usize,
+    max_length: usize,
+}
+
+impl Default for EntropyConfig {
+    fn default() -> Self {
+        Self {
+            threshold_hex: ENTROPY_THRESHOLD_HEX,
+            threshold_base64: ENTROPY_THRESHOLD_BASE64,
+            threshold_alphanumeric: ENTROPY_THRESHOLD_ALPHANUMERIC,
+            min_length: ENTROPY_MIN_LENGTH,
+            max_length: ENTROPY_MAX_LENGTH,
+        }
+    }
+}
+
+/// Get entropy config with environment variable overrides
+fn get_entropy_config() -> EntropyConfig {
+    let mut config = EntropyConfig::default();
+
+    // Global threshold override
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_THRESHOLD") {
+        if let Ok(t) = val.parse::<f64>() {
+            config.threshold_hex = t;
+            config.threshold_base64 = t;
+            config.threshold_alphanumeric = t;
+        }
+    }
+
+    // Per-charset overrides
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_HEX") {
+        if let Ok(t) = val.parse::<f64>() {
+            config.threshold_hex = t;
+        }
+    }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_BASE64") {
+        if let Ok(t) = val.parse::<f64>() {
+            config.threshold_base64 = t;
+        }
+    }
+
+    // Length overrides
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_MIN_LEN") {
+        if let Ok(l) = val.parse::<usize>() {
+            config.min_length = l;
+        }
+    }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_MAX_LEN") {
+        if let Ok(l) = val.parse::<usize>() {
+            config.max_length = l;
+        }
+    }
+
+    config
+}
+
+/// Calculate Shannon entropy of a string in bits
+/// H = -Σ p(x) log₂ p(x)
+fn shannon_entropy(s: &str) -> f64 {
+    if s.is_empty() {
+        return 0.0;
+    }
+
+    let mut counts: HashMap<char, usize> = HashMap::new();
+    for c in s.chars() {
+        *counts.entry(c).or_insert(0) += 1;
+    }
+
+    let length = s.len() as f64;
+    let mut entropy = 0.0;
+    for &count in counts.values() {
+        let p = count as f64 / length;
+        entropy -= p * p.log2();
+    }
+    entropy
+}
+
+/// Character set definitions
+const CHARSET_HEX: &str = "0123456789abcdef";
+const CHARSET_BASE64: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+const CHARSET_ALPHANUMERIC: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+
+/// Classify a string's character set
+/// Returns: "hex", "base64", "alphanumeric", or "mixed"
+fn classify_charset(s: &str) -> &'static str {
+    let lowercase = s.to_lowercase();
+    let chars: HashSet<char> = lowercase.chars().collect();
+    let hex_chars: HashSet<char> = CHARSET_HEX.chars().collect();
+
+    // Check hex first (most restrictive)
+    if chars.iter().all(|c| hex_chars.contains(c)) {
+        return "hex";
+    }
+
+    // Check alphanumeric (common for tokens)
+    let alnum_chars: HashSet<char> = CHARSET_ALPHANUMERIC.chars().collect();
+    let original_chars: HashSet<char> = s.chars().collect();
+    if original_chars.iter().all(|c| alnum_chars.contains(c)) {
+        return "alphanumeric";
+    }
+
+    // Check base64
+    let base64_chars: HashSet<char> = CHARSET_BASE64.chars().collect();
+    if original_chars.iter().all(|c| base64_chars.contains(c)) {
+        return "base64";
+    }
+
+    "mixed"
+}
+
+/// Token with position information
+struct Token {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
+/// Extract potential secret tokens from text
+fn extract_tokens(text: &str, min_len: usize, max_len: usize) -> Vec<Token> {
+    // Split on delimiters: whitespace and common punctuation
+    // Regex: [\s"'`()\[\]{},:;<>=@#]+
+    let delim_re = Regex::new(r#"[\s"'`()\[\]{},;:<>=@#]+"#).unwrap();
+
+    let mut tokens = Vec::new();
+    let mut pos = 0;
+
+    for part in delim_re.split(text) {
+        if !part.is_empty() {
+            // Find the actual position of this part in the original text
+            if let Some(idx) = text[pos..].find(part) {
+                let start = pos + idx;
+                let end = start + part.len();
+                pos = end;
+
+                // Filter by length
+                if part.len() < min_len || part.len() > max_len {
+                    continue;
+                }
+
+                // Skip if all alphabetic (variable names)
+                if part.chars().all(|c| c.is_ascii_alphabetic()) {
+                    continue;
+                }
+
+                // Skip if all numeric (IDs, line numbers)
+                if part.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
+
+                // Skip if contains whitespace
+                if part.chars().any(|c| c.is_whitespace()) {
+                    continue;
+                }
+
+                tokens.push(Token {
+                    text: part.to_string(),
+                    start,
+                    end,
+                });
+            }
+        }
+    }
+
+    tokens
+}
+
+/// Check if a position in text is preceded by a context keyword (within 50 chars)
+fn has_context_keyword(text: &str, pos: usize, keywords: &[&str]) -> bool {
+    if keywords.is_empty() {
+        return false;
+    }
+
+    let start = if pos > 50 { pos - 50 } else { 0 };
+    let prefix = text[start..pos].to_lowercase();
+
+    for kw in keywords {
+        if prefix.contains(&kw.to_lowercase()) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Check if token matches an exclusion pattern
+/// Returns: Some(label) if excluded, None otherwise
+fn matches_exclusion(token: &str, text: &str, pos: usize, exclusion_regexes: &[(Regex, &EntropyExclusion)]) -> Option<&'static str> {
+    for (regex, excl) in exclusion_regexes {
+        if regex.is_match(token) {
+            // Check context keywords if present
+            if let Some(context_kw) = excl.context_keywords {
+                if has_context_keyword(text, pos, context_kw) {
+                    return Some(excl.label);
+                }
+                // Has context keywords but none found - not excluded
+                continue;
+            }
+            // No context keywords required - excluded
+            return Some(excl.label);
+        }
+    }
+
+    // Check global context keywords
+    if has_context_keyword(text, pos, ENTROPY_CONTEXT_KEYWORDS) {
+        return Some("CONTEXT");
+    }
+
+    None
+}
+
+/// Create structure description for entropy redaction
+/// Example: hex:40:3.8
+fn describe_entropy_structure(token: &str, entropy: f64, charset: &str) -> String {
+    let charset_abbrev = match charset {
+        "hex" => "hex",
+        "base64" => "b64",
+        "alphanumeric" => "alnum",
+        _ => "mix",
+    };
+    format!("{}:{}:{:.1}", charset_abbrev, token.len(), entropy)
+}
+
+/// Build compiled exclusion regexes from patterns
+fn build_exclusion_regexes() -> Vec<(Regex, &'static EntropyExclusion)> {
+    ENTROPY_EXCLUSIONS
+        .iter()
+        .filter_map(|excl| {
+            let regex = if excl.case_insensitive {
+                Regex::new(&format!("(?i)^{}$", excl.pattern)).ok()
+            } else {
+                Regex::new(&format!("^{}$", excl.pattern)).ok()
+            };
+            regex.map(|r| (r, excl))
+        })
+        .collect()
+}
+
+/// Detect and redact high-entropy strings
+fn redact_entropy(text: &str, config: &EntropyConfig, exclusion_regexes: &[(Regex, &EntropyExclusion)]) -> String {
+    let tokens = extract_tokens(text, config.min_length, config.max_length);
+
+    // Collect replacements (process in reverse order to preserve positions)
+    let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+
+    for token in tokens.iter().rev() {
+        // Check exclusions
+        if matches_exclusion(&token.text, text, token.start, exclusion_regexes).is_some() {
+            continue;
+        }
+
+        // Classify character set and get threshold
+        let charset = classify_charset(&token.text);
+        let threshold = match charset {
+            "hex" => config.threshold_hex,
+            "base64" => config.threshold_base64,
+            "alphanumeric" => config.threshold_alphanumeric,
+            _ => config.threshold_alphanumeric, // mixed uses alphanumeric threshold
+        };
+
+        // Calculate entropy
+        let entropy = shannon_entropy(&token.text);
+
+        if entropy >= threshold {
+            let structure = describe_entropy_structure(&token.text, entropy, charset);
+            let replacement = format!("[REDACTED:HIGH_ENTROPY:{}]", structure);
+            replacements.push((token.start, token.end, replacement));
+        }
+    }
+
+    // Apply replacements in reverse order
+    let mut result = text.to_string();
+    for (start, end, replacement) in replacements {
+        result = format!("{}{}{}", &result[..start], replacement, &result[end..]);
+    }
+
+    result
+}
+
 fn redact_line(
     line: &str,
     secrets: &HashMap<String, String>,
     patterns: &[Pattern],
     context_patterns: &[ContextPattern],
     config: &FilterConfig,
+    entropy_config: Option<&EntropyConfig>,
+    exclusion_regexes: &[(Regex, &EntropyExclusion)],
 ) -> String {
     let mut result = line.to_string();
     if config.values {
@@ -291,6 +601,11 @@ fn redact_line(
     }
     if config.patterns {
         result = redact_patterns(&result, patterns, context_patterns);
+    }
+    if config.entropy {
+        if let Some(ec) = entropy_config {
+            result = redact_entropy(&result, ec, exclusion_regexes);
+        }
     }
     result
 }
@@ -301,11 +616,13 @@ fn flush_buffer_redacted(
     patterns: &[Pattern],
     context_patterns: &[ContextPattern],
     config: &FilterConfig,
+    entropy_config: Option<&EntropyConfig>,
+    exclusion_regexes: &[(Regex, &EntropyExclusion)],
 ) {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     for line in buffer {
-        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns, config));
+        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns, config, entropy_config, exclusion_regexes));
     }
     let _ = handle.flush();
 }
@@ -352,6 +669,20 @@ fn main() {
         None
     };
 
+    // Entropy configuration (only if entropy filter enabled)
+    let entropy_config = if config.entropy {
+        Some(get_entropy_config())
+    } else {
+        None
+    };
+
+    // Build exclusion regexes for entropy detection
+    let exclusion_regexes = if config.entropy {
+        build_exclusion_regexes()
+    } else {
+        Vec::new()
+    };
+
     let mut state = STATE_NORMAL;
     let mut buffer: Vec<String> = Vec::new();
 
@@ -367,7 +698,7 @@ fn main() {
 
         // Binary detection: null byte
         if line.contains('\0') {
-            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config);
+            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes);
             buffer.clear();
             // Passthrough this line and rest
             let _ = write!(stdout_handle, "{}", line);
@@ -390,7 +721,7 @@ fn main() {
                     state = STATE_IN_PRIVATE_KEY;
                     buffer = vec![line];
                 } else {
-                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns, &config));
+                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes));
                     let _ = stdout_handle.flush();
                 }
             }
@@ -408,7 +739,7 @@ fn main() {
                     buffer.clear();
                     state = STATE_NORMAL;
                 } else if buffer.len() > MAX_PRIVATE_KEY_BUFFER {
-                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config);
+                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes);
                     buffer.clear();
                     state = STATE_NORMAL;
                 }
@@ -418,5 +749,5 @@ fn main() {
     }
 
     // EOF: flush remaining buffer
-    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config);
+    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &config, entropy_config.as_ref(), &exclusion_regexes);
 }

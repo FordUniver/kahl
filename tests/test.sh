@@ -161,27 +161,63 @@ run_passthrough_tests() {
     [[ $QUIET -eq 0 ]] && echo
 }
 
+# Test category: entropy (--filter=entropy)
+run_entropy_tests() {
+    [[ $QUIET -eq 0 ]] && echo "=== Entropy Tests (--filter=entropy) ==="
+    for impl in "${IMPLS[@]}"; do
+        for f in "$FIXTURES_DIR"/entropy/*.txt; do
+            [[ -f "$f" ]] || continue
+            name=$(basename "$f" .txt)
+            run_test "$impl" "entropy" "entropy/$name.txt" "entropy/$name.txt" "entropy/$name"
+        done
+    done
+    [[ $QUIET -eq 0 ]] && echo
+}
+
 # Test category: CLI argument parsing
 run_cli_tests() {
     [[ $QUIET -eq 0 ]] && echo "=== CLI Argument Tests ==="
 
     local test_input="ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
     local redacted_pattern='\[REDACTED:GITHUB_PAT:'
+    local entropy_input="xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6"
+    local entropy_redacted='\[REDACTED:HIGH_ENTROPY:'
 
     for impl in "${IMPLS[@]}"; do
-        # Test --filter=all
+        local -a base_env=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp")
+
+        # Test --filter=all (should redact patterns)
         local result
         result=$(echo "$test_input" | run_impl "$impl" "all" 2>/dev/null) || result=""
         if [[ "$result" =~ $redacted_pattern ]]; then
-            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/--filter=all"
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/--filter=all-patterns"
             record_pass
         else
-            print_result fail "$impl" "cli/--filter=all"
+            print_result fail "$impl" "cli/--filter=all-patterns"
+            record_fail
+        fi
+
+        # Test --filter=all includes entropy (key behavior change)
+        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" --filter=all <<< "$entropy_input" 2>/dev/null) || result=""
+        if [[ "$result" =~ $entropy_redacted ]]; then
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/--filter=all-entropy"
+            record_pass
+        else
+            print_result fail "$impl" "cli/--filter=all-entropy" "all should include entropy"
+            record_fail
+        fi
+
+        # Test explicit --filter=values,patterns does NOT include entropy
+        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" --filter=values,patterns <<< "$entropy_input" 2>/dev/null) || result=""
+        if [[ "$result" == "$entropy_input" ]]; then
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/--filter=values,patterns-no-entropy"
+            record_pass
+        else
+            print_result fail "$impl" "cli/--filter=values,patterns-no-entropy" "explicit combo should not include entropy"
             record_fail
         fi
 
         # Test -f short form (need direct invocation)
-        local -a base_env=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp")
         result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" -f patterns <<< "$test_input" 2>/dev/null) || result=""
         if [[ "$result" =~ $redacted_pattern ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/-f patterns"
@@ -259,6 +295,31 @@ run_env_tests() {
             record_pass
         else
             print_result fail "$impl" "env/cli-overrides-env" "CLI should override ENV"
+            record_fail
+        fi
+
+        # Test SECRETS_FILTER_ENTROPY=1 (enables entropy by default)
+        local entropy_input="xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6"
+        result=$(env -i "${base_env[@]}" SECRETS_FILTER_ENTROPY=1 \
+            "$ROOT_DIR/$impl/secrets-filter" <<< "$entropy_input" 2>/dev/null) || result=""
+
+        if [[ "$result" =~ \[REDACTED:HIGH_ENTROPY: ]]; then
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/SECRETS_FILTER_ENTROPY=1"
+            record_pass
+        else
+            print_result fail "$impl" "env/SECRETS_FILTER_ENTROPY=1" "Entropy should be enabled"
+            record_fail
+        fi
+
+        # Test entropy is off by default (no --filter=entropy, no env var)
+        result=$(env -i "${base_env[@]}" \
+            "$ROOT_DIR/$impl/secrets-filter" <<< "$entropy_input" 2>/dev/null) || result=""
+
+        if [[ "$result" == "$entropy_input" ]]; then
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/entropy-off-by-default"
+            record_pass
+        else
+            print_result fail "$impl" "env/entropy-off-by-default" "Entropy should be off by default"
             record_fail
         fi
     done
@@ -347,6 +408,7 @@ main() {
     run_value_tests
     run_combined_tests
     run_passthrough_tests
+    run_entropy_tests
     run_cli_tests
     run_env_tests
     run_streaming_tests

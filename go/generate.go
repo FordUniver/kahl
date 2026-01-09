@@ -41,10 +41,11 @@ func run() error {
 
 	patternsFile := filepath.Join(repoRoot, "patterns", "patterns.yaml")
 	envFile := filepath.Join(repoRoot, "patterns", "env.yaml")
+	entropyFile := filepath.Join(repoRoot, "patterns", "entropy.yaml")
 	outputFile := filepath.Join(repoRoot, "go", "patterns_gen.go")
 
 	// Compute source hash
-	hash, err := computeSourceHash(patternsFile, envFile)
+	hash, err := computeSourceHash(patternsFile, envFile, entropyFile)
 	if err != nil {
 		return fmt.Errorf("hash: %w", err)
 	}
@@ -84,6 +85,12 @@ func run() error {
 	envSuffixes, err := readEnvSuffixes(envFile)
 	if err != nil {
 		return fmt.Errorf("env suffixes: %w", err)
+	}
+
+	// Read entropy.yaml
+	entropyConfig, err := readEntropyConfig(entropyFile)
+	if err != nil {
+		return fmt.Errorf("entropy config: %w", err)
 	}
 
 	// Generate output
@@ -178,6 +185,61 @@ type Pattern struct {
 	buf.WriteString("var envSuffixes = []string{\n")
 	for _, s := range envSuffixes {
 		buf.WriteString(fmt.Sprintf("\t%q,\n", s))
+	}
+	buf.WriteString("}\n\n")
+
+	// Entropy configuration
+	buf.WriteString("// Entropy detection configuration\n")
+	if entropyConfig.enabledByDefault {
+		buf.WriteString("const EntropyEnabledDefault = true\n")
+	} else {
+		buf.WriteString("const EntropyEnabledDefault = false\n")
+	}
+	buf.WriteString(fmt.Sprintf("const EntropyMinLength = %d\n", entropyConfig.minLength))
+	buf.WriteString(fmt.Sprintf("const EntropyMaxLength = %d\n\n", entropyConfig.maxLength))
+
+	buf.WriteString("// EntropyThresholds maps charset names to entropy thresholds\n")
+	buf.WriteString("var EntropyThresholds = map[string]float64{\n")
+	buf.WriteString(fmt.Sprintf("\t\"hex\":          %.1f,\n", entropyConfig.thresholds.hex))
+	buf.WriteString(fmt.Sprintf("\t\"base64\":       %.1f,\n", entropyConfig.thresholds.base64))
+	buf.WriteString(fmt.Sprintf("\t\"alphanumeric\": %.1f,\n", entropyConfig.thresholds.alphanumeric))
+	buf.WriteString("}\n\n")
+
+	buf.WriteString("// EntropyExclusion defines a pattern to exclude from entropy detection\n")
+	buf.WriteString("type EntropyExclusion struct {\n")
+	buf.WriteString("\tPattern         string\n")
+	buf.WriteString("\tLabel           string\n")
+	buf.WriteString("\tCaseInsensitive bool\n")
+	buf.WriteString("\tContextKeywords []string\n")
+	buf.WriteString("}\n\n")
+
+	buf.WriteString("// EntropyExclusions lists patterns to exclude from entropy detection\n")
+	buf.WriteString("var EntropyExclusions = []EntropyExclusion{\n")
+	for _, excl := range entropyConfig.exclusions {
+		buf.WriteString("\t{\n")
+		buf.WriteString(fmt.Sprintf("\t\tPattern:         %q,\n", excl.pattern))
+		buf.WriteString(fmt.Sprintf("\t\tLabel:           %q,\n", excl.label))
+		buf.WriteString(fmt.Sprintf("\t\tCaseInsensitive: %t,\n", excl.caseInsensitive))
+		if len(excl.contextKeywords) > 0 {
+			buf.WriteString("\t\tContextKeywords: []string{")
+			for i, kw := range excl.contextKeywords {
+				if i > 0 {
+					buf.WriteString(", ")
+				}
+				buf.WriteString(fmt.Sprintf("%q", kw))
+			}
+			buf.WriteString("},\n")
+		} else {
+			buf.WriteString("\t\tContextKeywords: nil,\n")
+		}
+		buf.WriteString("\t},\n")
+	}
+	buf.WriteString("}\n\n")
+
+	buf.WriteString("// EntropyContextKeywords is a map for quick keyword lookup\n")
+	buf.WriteString("var EntropyContextKeywords = map[string]bool{\n")
+	for _, kw := range entropyConfig.contextKeywords {
+		buf.WriteString(fmt.Sprintf("\t%q: true,\n", kw))
 	}
 	buf.WriteString("}\n")
 
@@ -424,4 +486,96 @@ func toGoVarName(s string) string {
 		}
 	}
 	return strings.Join(parts, "")
+}
+
+// Entropy configuration types
+type entropyThresholds struct {
+	hex          float64
+	base64       float64
+	alphanumeric float64
+}
+
+type entropyExclusion struct {
+	pattern         string
+	label           string
+	caseInsensitive bool
+	contextKeywords []string
+}
+
+type entropyConfig struct {
+	enabledByDefault bool
+	thresholds       entropyThresholds
+	minLength        int
+	maxLength        int
+	exclusions       []entropyExclusion
+	contextKeywords  []string
+}
+
+func readEntropyConfig(file string) (entropyConfig, error) {
+	var cfg entropyConfig
+
+	// Check if file exists
+	if _, err := os.Stat(file); os.IsNotExist(err) {
+		// Return defaults if entropy.yaml doesn't exist
+		cfg.enabledByDefault = false
+		cfg.thresholds = entropyThresholds{hex: 3.0, base64: 4.5, alphanumeric: 4.5}
+		cfg.minLength = 16
+		cfg.maxLength = 256
+		return cfg, nil
+	}
+
+	// enabled_by_default
+	enabled, err := yq(".enabled_by_default // false", file)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.enabledByDefault = enabled == "true"
+
+	// Thresholds
+	hexT, _ := yq(".thresholds.hex // 3.0", file)
+	base64T, _ := yq(".thresholds.base64 // 4.5", file)
+	alphanumT, _ := yq(".thresholds.alphanumeric // 4.5", file)
+
+	fmt.Sscanf(hexT, "%f", &cfg.thresholds.hex)
+	fmt.Sscanf(base64T, "%f", &cfg.thresholds.base64)
+	fmt.Sscanf(alphanumT, "%f", &cfg.thresholds.alphanumeric)
+
+	// Token length constraints
+	minLen, _ := yq(".token_length.min // 16", file)
+	maxLen, _ := yq(".token_length.max // 256", file)
+	fmt.Sscanf(minLen, "%d", &cfg.minLength)
+	fmt.Sscanf(maxLen, "%d", &cfg.maxLength)
+
+	// Exclusions
+	countStr, err := yq(".exclusions | length", file)
+	if err != nil {
+		return cfg, err
+	}
+	var count int
+	fmt.Sscanf(countStr, "%d", &count)
+
+	for i := 0; i < count; i++ {
+		pattern, _ := yq(fmt.Sprintf(".exclusions[%d].pattern", i), file)
+		label, _ := yq(fmt.Sprintf(".exclusions[%d].label", i), file)
+		caseIns, _ := yq(fmt.Sprintf(".exclusions[%d].case_insensitive // false", i), file)
+
+		// Check for context keywords
+		kwCheck, _ := yq(fmt.Sprintf(".exclusions[%d].context_keywords // null", i), file)
+		var keywords []string
+		if kwCheck != "null" && kwCheck != "" {
+			keywords, _ = yqLines(fmt.Sprintf(".exclusions[%d].context_keywords[]", i), file)
+		}
+
+		cfg.exclusions = append(cfg.exclusions, entropyExclusion{
+			pattern:         pattern,
+			label:           label,
+			caseInsensitive: caseIns == "true",
+			contextKeywords: keywords,
+		})
+	}
+
+	// Global context keywords
+	cfg.contextKeywords, _ = yqLines(".context_keywords[]", file)
+
+	return cfg, nil
 }

@@ -20,6 +20,7 @@ REPO_ROOT = File.dirname(SCRIPT_DIR)
 
 PATTERNS_FILE = File.join(REPO_ROOT, 'patterns', 'patterns.yaml')
 ENV_FILE = File.join(REPO_ROOT, 'patterns', 'env.yaml')
+ENTROPY_FILE = File.join(REPO_ROOT, 'patterns', 'entropy.yaml')
 OUTPUT_FILE = File.join(SCRIPT_DIR, 'patterns_gen.rb')
 
 def compute_file_hash(path)
@@ -40,9 +41,11 @@ end
 def generate_patterns_module
   patterns_yaml = YAML.safe_load(File.read(PATTERNS_FILE), permitted_classes: [Symbol])
   env_yaml = YAML.safe_load(File.read(ENV_FILE), permitted_classes: [Symbol])
+  entropy_yaml = File.exist?(ENTROPY_FILE) ? YAML.safe_load(File.read(ENTROPY_FILE), permitted_classes: [Symbol]) : nil
 
   patterns_hash = compute_file_hash(PATTERNS_FILE)
   env_hash = compute_file_hash(ENV_FILE)
+  entropy_hash = File.exist?(ENTROPY_FILE) ? compute_file_hash(ENTROPY_FILE) : nil
   timestamp = Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
   # Extract data from patterns.yaml
@@ -68,6 +71,7 @@ def generate_patterns_module
   lines << "# Generated: #{timestamp}"
   lines << "# Source: patterns/patterns.yaml (#{patterns_hash})"
   lines << "#         patterns/env.yaml (#{env_hash})"
+  lines << "#         patterns/entropy.yaml (#{entropy_hash || 'not found'})"
   lines << '# Regenerate with: ruby ruby/generate.rb'
   lines << ''
   lines << 'module PatternsGen'
@@ -167,6 +171,76 @@ def generate_patterns_module
   lines << '  ENV_SUFFIXES = %w['
   lines << "    #{suffixes.join(' ')}"
   lines << '  ].freeze'
+  lines << ''
+
+  # Generate entropy detection configuration
+  if entropy_yaml
+    lines << '  # Entropy detection configuration'
+    enabled_default = entropy_yaml['enabled_by_default'] || false
+    lines << "  ENTROPY_ENABLED_DEFAULT = #{enabled_default}"
+    lines << ''
+
+    # Thresholds
+    thresholds = entropy_yaml['thresholds'] || {}
+    hex_t = thresholds['hex'] || 3.0
+    base64_t = thresholds['base64'] || 4.5
+    alnum_t = thresholds['alphanumeric'] || 4.5
+    lines << '  ENTROPY_THRESHOLDS = {'
+    lines << "    'hex' => #{hex_t},"
+    lines << "    'base64' => #{base64_t},"
+    lines << "    'alphanumeric' => #{alnum_t}"
+    lines << '  }.freeze'
+    lines << ''
+
+    # Token length constraints
+    token_length = entropy_yaml['token_length'] || {}
+    min_len = token_length['min'] || 16
+    max_len = token_length['max'] || 256
+    lines << "  ENTROPY_MIN_LENGTH = #{min_len}"
+    lines << "  ENTROPY_MAX_LENGTH = #{max_len}"
+    lines << ''
+
+    # Exclusion patterns
+    exclusions = entropy_yaml['exclusions'] || []
+    lines << '  ENTROPY_EXCLUSIONS = ['
+    exclusions.each do |excl|
+      pattern = excl['pattern']
+      label = excl['label']
+      case_insensitive = excl['case_insensitive'] || false
+      context_keywords = excl['context_keywords']
+
+      lines << '    {'
+      lines << "      pattern: #{format_regex(pattern)},"
+      lines << "      label: '#{label}',"
+      lines << "      case_insensitive: #{case_insensitive},"
+      if context_keywords
+        keywords_str = context_keywords.map { |k| "'#{k}'" }.join(', ')
+        lines << "      context_keywords: [#{keywords_str}]"
+      else
+        lines << '      context_keywords: nil'
+      end
+      lines << '    },'
+    end
+    lines << '  ].freeze'
+    lines << ''
+
+    # Global context keywords
+    context_keywords = entropy_yaml['context_keywords'] || []
+    lines << '  ENTROPY_CONTEXT_KEYWORDS = Set.new(%w['
+    context_keywords.each_slice(6) do |chunk|
+      lines << "    #{chunk.join(' ')}"
+    end
+    lines << '  ]).freeze'
+  else
+    # Entropy config is optional - provide defaults
+    lines << '  # Entropy detection (disabled - entropy.yaml not found)'
+    lines << '  ENTROPY_ENABLED_DEFAULT = false'
+    lines << "  ENTROPY_THRESHOLDS = { 'hex' => 3.0, 'base64' => 4.5, 'alphanumeric' => 4.5 }.freeze"
+    lines << '  ENTROPY_MIN_LENGTH = 16'
+    lines << '  ENTROPY_MAX_LENGTH = 256'
+    lines << '  ENTROPY_EXCLUSIONS = [].freeze'
+    lines << '  ENTROPY_CONTEXT_KEYWORDS = Set.new.freeze'
+  end
 
   lines << 'end'
   lines << ''

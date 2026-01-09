@@ -1,0 +1,16 @@
+# Threshold boundary tests
+# Testing entropy values near thresholds
+
+# LOW ENTROPY - should NOT be redacted (below threshold)
+# Hex with low entropy (2.0 bits < 3.0 threshold) - repeated pattern
+low_hex=aaaabbbbccccddddaaaabbbbccccdddd
+
+# Alphanumeric with low entropy (~3.5 bits < 4.5 threshold)
+low_alnum=aaaaAAAAbbbbBBBBccccCCCCddddDDDD
+
+# HIGH ENTROPY - should be redacted (above threshold)
+# Hex near threshold (3.9 bits > 3.0 threshold)
+high_hex=[REDACTED:HIGH_ENTROPY:hex:32:3.9]
+
+# Alphanumeric near threshold (5.0 bits > 4.5 threshold)
+high_alnum=[REDACTED:HIGH_ENTROPY:alnum:32:5.0]

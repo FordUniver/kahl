@@ -1,0 +1,14 @@
+# Length boundary tests
+# Default: min 16, max 256
+
+# TOO SHORT - should NOT be redacted (15 chars < 16 min)
+short_key=xK9mNpL2qR5tW8v
+
+# MINIMUM LENGTH - NOT redacted (16 chars but only 4.0 bits entropy < 4.5 threshold)
+min_key=xK9mNpL2qR5tW8vY
+
+# NORMAL LENGTH - should be redacted (32 chars, 5.0 bits entropy)
+normal_key=xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6
+
+# LONG but valid - should be redacted (64 chars < 256 max)
+long_key=xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6

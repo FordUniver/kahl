@@ -1,0 +1,9 @@
+# High entropy strings that should be redacted
+# Random hex (32 chars, 3.9 bits > 3.0 threshold)
+KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+# Random alphanumeric (32 chars, 5.0 bits > 4.5 threshold)
+api_key: xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6
+# Random base64 (48 chars, 4.9 bits > 4.5 threshold)
+encoded=SGVsbG9Xb3JsZDEyMzQ1Njc4OTBBQkNERUYxMjM0NTY3ODkw
+# Long random string
+secret_value=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop0123456789

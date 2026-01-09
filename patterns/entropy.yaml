@@ -1,0 +1,110 @@
+# Entropy-based secret detection configuration
+# Used by --filter=entropy to detect high-entropy strings that may be secrets
+#
+# This is an "ultra safe" mode - it accepts false positives to catch unknown secrets.
+# Disabled by default due to high false positive potential.
+
+# Enable by default in --filter=all? (No - must be explicitly requested)
+enabled_by_default: false
+
+# Shannon entropy thresholds by character set
+# Formula: H = -Σ p(x) log₂ p(x)
+# Values based on industry standards (TruffleHog, detect-secrets)
+thresholds:
+  hex: 3.0           # Max 4.0 bits for hex (0-9a-f)
+  base64: 4.5        # Max 6.0 bits for base64
+  alphanumeric: 4.5  # Max 5.95 bits for alphanumeric
+
+# Token length constraints
+token_length:
+  min: 16    # Shorter strings are rarely secrets
+  max: 256   # Longer strings are usually encoded data, not single secrets
+
+# Patterns to exclude from entropy detection (false positive reduction)
+# Skip strings matching these patterns regardless of entropy
+exclusions:
+  # UUID/GUID - extremely common in logs and configs
+  - pattern: '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+    label: UUID
+    case_insensitive: true
+
+  # Git SHA-1 (40 hex chars) - skip if preceded by context keyword
+  - pattern: '[a-f0-9]{40}'
+    label: GIT_SHA
+    context_keywords:
+      - commit
+      - sha
+      - hash
+      - ref
+      - oid
+      - blob
+      - tree
+      - parent
+      - HEAD
+      - merge
+
+  # Git SHA-256 / Docker digest (64 hex chars)
+  - pattern: '[a-f0-9]{64}'
+    label: SHA256_HASH
+    context_keywords:
+      - sha256
+      - image
+      - docker
+      - digest
+      - hash
+      - checksum
+      - layer
+
+  # MD5 hash (32 hex chars)
+  - pattern: '[a-f0-9]{32}'
+    label: MD5_HASH
+    context_keywords:
+      - md5
+      - hash
+      - checksum
+      - etag
+
+  # Docker image reference with digest
+  - pattern: 'sha256:[a-f0-9]{64}'
+    label: DOCKER_DIGEST
+
+  # Common version/build identifiers (hex with dots)
+  - pattern: '[0-9]+\.[0-9]+\.[0-9]+[a-f0-9]*'
+    label: VERSION_STRING
+
+# Context keywords that suggest non-secret content
+# If a high-entropy string is preceded by one of these words (within 50 chars),
+# it's more likely a hash/ID than a secret
+context_keywords:
+  - commit
+  - sha
+  - hash
+  - checksum
+  - etag
+  - image
+  - docker
+  - uuid
+  - guid
+  - ref
+  - oid
+  - blob
+  - tree
+  - digest
+  - layer
+  - revision
+  - version
+  - build
+  - id
+
+# Characters that typically don't appear in secrets
+# Tokens containing these are likely not secrets
+non_secret_chars:
+  - ' '   # Spaces suggest natural text
+  - '\t'  # Tabs suggest formatting
+  - '\n'  # Newlines suggest multi-line content
+
+# Character set definitions for classification
+charsets:
+  hex: '0123456789abcdef'
+  base64: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+  alphanumeric: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'

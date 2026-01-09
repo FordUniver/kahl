@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate patterns_gen.py from YAML pattern definitions.
 
-Reads patterns/patterns.yaml and patterns/env.yaml, generates python/patterns_gen.py
-with compiled pattern definitions for the secrets-filter.
+Reads patterns/patterns.yaml, patterns/env.yaml, and patterns/entropy.yaml,
+generates python/patterns_gen.py with compiled pattern definitions for secrets-filter.
 
 Uses yq CLI for YAML parsing (no Python YAML dependency needed).
 
@@ -22,6 +22,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 PATTERNS_DIR = REPO_ROOT / "patterns"
 PATTERNS_YAML = PATTERNS_DIR / "patterns.yaml"
 ENV_YAML = PATTERNS_DIR / "env.yaml"
+ENTROPY_YAML = PATTERNS_DIR / "entropy.yaml"
 OUTPUT_FILE = SCRIPT_DIR / "patterns_gen.py"
 
 
@@ -59,8 +60,9 @@ def get_yq_list(query: str, file: Path) -> list[str]:
 def compute_source_hash() -> str:
     """Compute combined hash of source YAML files."""
     hasher = hashlib.sha256()
-    for path in sorted([PATTERNS_YAML, ENV_YAML]):
-        hasher.update(path.read_bytes())
+    for path in sorted([PATTERNS_YAML, ENV_YAML, ENTROPY_YAML]):
+        if path.exists():
+            hasher.update(path.read_bytes())
     return hasher.hexdigest()[:12]
 
 
@@ -189,6 +191,79 @@ def generate_env_vars() -> str:
     return "\n".join(lines)
 
 
+def generate_entropy_config() -> str:
+    """Generate entropy detection configuration."""
+    if not ENTROPY_YAML.exists():
+        # Entropy config is optional - return minimal defaults
+        return """\
+# Entropy detection (disabled - entropy.yaml not found)
+ENTROPY_ENABLED_DEFAULT = False
+ENTROPY_THRESHOLDS = {'hex': 3.0, 'base64': 4.5, 'alphanumeric': 4.5}
+ENTROPY_MIN_LENGTH = 16
+ENTROPY_MAX_LENGTH = 256
+ENTROPY_EXCLUSIONS = []
+ENTROPY_CONTEXT_KEYWORDS = set()"""
+
+    lines = []
+
+    # Enabled by default
+    enabled = run_yq(".enabled_by_default // false", ENTROPY_YAML)
+    lines.append(f"ENTROPY_ENABLED_DEFAULT = {enabled.capitalize()}")
+    lines.append("")
+
+    # Thresholds
+    hex_t = run_yq(".thresholds.hex // 3.0", ENTROPY_YAML)
+    base64_t = run_yq(".thresholds.base64 // 4.5", ENTROPY_YAML)
+    alnum_t = run_yq(".thresholds.alphanumeric // 4.5", ENTROPY_YAML)
+    lines.append("ENTROPY_THRESHOLDS = {")
+    lines.append(f"    'hex': {hex_t},")
+    lines.append(f"    'base64': {base64_t},")
+    lines.append(f"    'alphanumeric': {alnum_t},")
+    lines.append("}")
+    lines.append("")
+
+    # Token length constraints
+    min_len = run_yq(".token_length.min // 16", ENTROPY_YAML)
+    max_len = run_yq(".token_length.max // 256", ENTROPY_YAML)
+    lines.append(f"ENTROPY_MIN_LENGTH = {min_len}")
+    lines.append(f"ENTROPY_MAX_LENGTH = {max_len}")
+    lines.append("")
+
+    # Exclusion patterns
+    lines.append("ENTROPY_EXCLUSIONS = [")
+    count = int(run_yq(".exclusions | length", ENTROPY_YAML))
+    for i in range(count):
+        pattern = run_yq(f".exclusions[{i}].pattern", ENTROPY_YAML)
+        label = run_yq(f".exclusions[{i}].label", ENTROPY_YAML)
+        case_insensitive = run_yq(f".exclusions[{i}].case_insensitive // false", ENTROPY_YAML)
+
+        # Check for context keywords
+        keywords_raw = run_yq(f".exclusions[{i}].context_keywords // null", ENTROPY_YAML)
+        if keywords_raw and keywords_raw != "null":
+            keywords = get_yq_list(f".exclusions[{i}].context_keywords[]", ENTROPY_YAML)
+            keywords_str = repr(keywords)
+        else:
+            keywords_str = "None"
+
+        lines.append("    {")
+        lines.append(f"        'pattern': {format_pattern_string(pattern)},")
+        lines.append(f"        'label': '{label}',")
+        lines.append(f"        'case_insensitive': {case_insensitive.capitalize()},")
+        lines.append(f"        'context_keywords': {keywords_str},")
+        lines.append("    },")
+    lines.append("]")
+    lines.append("")
+
+    # Context keywords (global list for quick lookup)
+    keywords = get_yq_list(".context_keywords[]", ENTROPY_YAML)
+    lines.append("ENTROPY_CONTEXT_KEYWORDS = {")
+    for kw in sorted(keywords):
+        lines.append(f"    '{kw}',")
+    lines.append("}")
+
+    return "\n".join(lines)
+
+
 def generate_constants() -> str:
     """Generate constants from YAML."""
     long_threshold = run_yq(".constants.long_threshold", PATTERNS_YAML)
@@ -214,6 +289,7 @@ def generate_file() -> str:
 # This file is auto-generated from:
 #   - patterns/patterns.yaml
 #   - patterns/env.yaml
+#   - patterns/entropy.yaml
 #
 # To regenerate: python python/generate.py
 """Auto-generated pattern definitions for secrets-filter.
@@ -226,6 +302,7 @@ This module exports:
 - EXPLICIT_ENV_VARS: Set of known secret variable names
 - ENV_SUFFIXES: Tuple of variable name suffixes indicating secrets
 - LONG_THRESHOLD, MAX_PRIVATE_KEY_BUFFER: Integer constants
+- ENTROPY_*: Entropy detection configuration
 """
 '''
 
@@ -248,6 +325,9 @@ This module exports:
         "",
         "# Environment variable detection",
         generate_env_vars(),
+        "",
+        "# Entropy detection configuration",
+        generate_entropy_config(),
         "",
     ]
 

@@ -1,0 +1,20 @@
+# Test --filter=all: should redact values, patterns, AND entropy
+# This tests the corrected behavior where "all" means all filters
+
+# Pattern secrets (should be redacted by patterns filter)
+GitHub PAT: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+GitLab PAT: glpat-abcdefghij1234567890
+
+# Env values (should be redacted by values filter)
+Config token: test_gh_token_value_1234567890
+
+# High-entropy strings (should be redacted by entropy filter)
+Random alphanumeric xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6 in text
+
+# Entropy exclusions (should NOT be redacted - context keywords)
+commit e83c5163316f89bfbde7d9ab23ca2e25604af290
+sha256: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+
+# Non-secrets (should pass through)
+Normal log line without secrets
+UUID: 550e8400-e29b-41d4-a716-446655440000
