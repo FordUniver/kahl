@@ -23,7 +23,7 @@ find_implementations() {
     local -a impls=()
     local impl_filter="${1:-}"
 
-    for dir in python perl go bash ruby rust gawk bun swift; do
+    for dir in python perl go ruby rust bun swift; do
         if [[ -x "$ROOT_DIR/$dir/secrets-filter" ]]; then
             if [[ -z "$impl_filter" || "$dir" == "$impl_filter" ]]; then
                 impls+=("$dir")

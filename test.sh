@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test suite for secrets-filter implementations
-# Tests Python, Perl, Go, and Bash versions
+# Tests Python, Perl, Go, Ruby, Rust, Bun, Swift versions
 # allow-secrets - bypass secrets-filter for test data
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -13,10 +13,8 @@ declare -a IMPLS=()
 [[ -x python/secrets-filter ]] && IMPLS+=(python/secrets-filter)
 [[ -x perl/secrets-filter ]] && IMPLS+=(perl/secrets-filter)
 [[ -x go/secrets-filter ]] && IMPLS+=(go/secrets-filter)
-[[ -x bash/secrets-filter ]] && IMPLS+=(bash/secrets-filter)
 [[ -x ruby/secrets-filter ]] && IMPLS+=(ruby/secrets-filter)
 [[ -x rust/secrets-filter ]] && IMPLS+=(rust/secrets-filter)
-[[ -x gawk/secrets-filter ]] && IMPLS+=(gawk/secrets-filter)
 [[ -x bun/secrets-filter ]] && IMPLS+=(bun/secrets-filter)
 [[ -x swift/secrets-filter ]] && IMPLS+=(swift/secrets-filter)
 

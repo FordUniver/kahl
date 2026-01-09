@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -v, --verbose   Show diff on failures"
             echo "  -q, --quiet     Only show summary"
             echo "  -h, --help      Show this help"
-            echo "Implementation: python, perl, go, bash, ruby, rust, gawk, bun, swift"
+            echo "Implementation: python, perl, go, ruby, rust, bun, swift"
             exit 0
             ;;
         *) IMPL_FILTER="$1"; shift ;;

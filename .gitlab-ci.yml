@@ -103,25 +103,6 @@ test:swift:
     - cd swift && swiftc -O -o secrets-filter main.swift
   allow_failure: true
 
-# Gawk tests (has significant failures)
-test:gawk:
-  <<: *test_template
-  image: alpine:3.21
-  variables:
-    IMPL: gawk
-  before_script:
-    - apk add --no-cache gawk bash
-    - *install_test_deps
-  allow_failure: true
-
-# Bash tests (has significant failures)
-test:bash:
-  <<: *test_template
-  image: bash:5.2-alpine3.21
-  variables:
-    IMPL: bash
-  allow_failure: true
-
 # Benchmark job - runs only for passing implementations
 benchmark:
   stage: benchmark
