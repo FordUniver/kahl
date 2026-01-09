@@ -378,6 +378,20 @@ run_edge_tests() {
             record_fail
         fi
 
+        # Private key EOF without END marker (incomplete key - should still be redacted)
+        # This catches the leak risk mentioned in code review
+        local incomplete_key
+        incomplete_key=$(printf '%s\n%s\n%s\n' '-----BEGIN RSA PRIVATE KEY-----' 'MIIBOgIBAAJBALRiMLAA' 'somebase64content')
+        result=$(echo "$incomplete_key" | run_impl "$impl" "patterns" 2>/dev/null) || result=""
+        # Should NOT contain the base64 content (must be redacted even without END)
+        if [[ "$result" != *"MIIBOgIBAAJBALRiMLAA"* ]] && [[ "$result" != *"somebase64content"* ]]; then
+            [[ $QUIET -eq 0 ]] && print_result pass "$impl" "edge/private-key-eof-no-end"
+            record_pass
+        else
+            print_result fail "$impl" "edge/private-key-eof-no-end" "incomplete private key leaked"
+            record_fail
+        fi
+
         # No secrets
         result=$(echo "hello world" | run_impl "$impl" "all" 2>/dev/null) || result=""
         if [[ "$result" == "hello world" ]]; then

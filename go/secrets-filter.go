@@ -817,8 +817,15 @@ func main() {
 		_ = hasNewline // suppress unused warning
 	}
 
-	// EOF: flush remaining buffer
-	for _, l := range buffer {
-		fmt.Print(redactLine(l, secrets, config, entropyConfig))
+	// EOF: handle remaining buffer
+	if len(buffer) > 0 {
+		if state == StateInPrivateKey {
+			// Incomplete private key block - redact entirely (fail closed, don't leak)
+			fmt.Println("[REDACTED:PRIVATE_KEY:multiline]")
+		} else {
+			for _, l := range buffer {
+				fmt.Print(redactLine(l, secrets, config, entropyConfig))
+			}
+		}
 	}
 }

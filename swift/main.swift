@@ -724,9 +724,14 @@ func main() {
         }
     }
 
-    // EOF: flush remaining buffer
+    // EOF: handle remaining buffer
     if !buffer.isEmpty {
-        flushBufferRedacted(buffer, secrets, config, entropyConfig)
+        if state == STATE_IN_PRIVATE_KEY {
+            // Incomplete private key block - redact entirely (fail closed, don't leak)
+            print("[REDACTED:PRIVATE_KEY:multiline]")
+        } else {
+            flushBufferRedacted(buffer, secrets, config, entropyConfig)
+        }
     }
 }
 

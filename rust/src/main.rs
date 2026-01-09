@@ -776,6 +776,13 @@ fn main() {
         }
     }
 
-    // EOF: flush remaining buffer
-    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
+    // EOF: handle remaining buffer
+    if !buffer.is_empty() {
+        if state == STATE_IN_PRIVATE_KEY {
+            // Incomplete private key block - redact entirely (fail closed, don't leak)
+            let _ = writeln!(stdout_handle, "[REDACTED:PRIVATE_KEY:multiline]");
+        } else {
+            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
+        }
+    }
 }
