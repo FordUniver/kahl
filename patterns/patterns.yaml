@@ -89,6 +89,88 @@ patterns:
   - pattern: 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
     label: JWT_TOKEN
 
+  # DigitalOcean tokens
+  - pattern: 'dop_v1_[a-f0-9]{64}'
+    label: DIGITALOCEAN_PAT
+  - pattern: 'doo_v1_[a-f0-9]{64}'
+    label: DIGITALOCEAN_OAUTH
+  - pattern: 'dor_v1_[a-f0-9]{64}'
+    label: DIGITALOCEAN_REFRESH
+
+  # Heroku
+  - pattern: 'HRKU-[A-Za-z0-9_]{60}'
+    label: HEROKU_API_KEY
+
+  # GCP OAuth secrets (post-2021)
+  - pattern: 'GOCSPX-[A-Za-z0-9_-]{20,}'
+    label: GCP_OAUTH_SECRET
+
+  # Netlify
+  - pattern: 'nfp_[A-Za-z0-9_-]{20,}'
+    label: NETLIFY_PAT
+
+  # Supabase (new format)
+  - pattern: 'sb_publishable_[A-Za-z0-9_-]{20,}'
+    label: SUPABASE_PUBLISHABLE
+  - pattern: 'sb_secret_[A-Za-z0-9_-]{20,}'
+    label: SUPABASE_SECRET
+
+  # PlanetScale
+  - pattern: 'pscale_tkn_[A-Za-z0-9_-]{30,}'
+    label: PLANETSCALE_TOKEN
+
+  # Terraform Cloud
+  - pattern: '[A-Za-z0-9]{9}\.atlasv1\.[A-Za-z0-9]{40,}'
+    label: TERRAFORM_CLOUD_TOKEN
+
+  # HashiCorp Vault
+  - pattern: 'hvs\.[A-Za-z0-9]{24,}'
+    label: VAULT_SERVICE_TOKEN
+  - pattern: 'hvb\.[A-Za-z0-9]{24,}'
+    label: VAULT_BATCH_TOKEN
+  - pattern: 'hvr\.[A-Za-z0-9]{24,}'
+    label: VAULT_RECOVERY_TOKEN
+
+  # RubyGems (new format)
+  - pattern: 'rubygems_[a-f0-9]{56}'
+    label: RUBYGEMS_API_KEY
+
+  # Shopify Admin API
+  - pattern: 'shpat_[A-Za-z0-9]{32,}'
+    label: SHOPIFY_ADMIN_TOKEN
+
+  # New Relic User API Key
+  - pattern: 'NRAK-[A-Za-z0-9]{27,}'
+    label: NEWRELIC_USER_KEY
+
+  # Mailgun
+  - pattern: 'key-[A-Za-z0-9]{32,}'
+    label: MAILGUN_API_KEY
+
+  # Linear
+  - pattern: 'lin_api_[A-Za-z0-9]{40,}'
+    label: LINEAR_API_KEY
+
+  # Doppler
+  - pattern: 'dp\.pt\.[A-Za-z0-9]{40,}'
+    label: DOPPLER_TOKEN
+
+  # Telegram Bot Token
+  - pattern: '[0-9]{9,10}:[A-Za-z0-9_-]{35,}'
+    label: TELEGRAM_BOT_TOKEN
+
+  # Discord Bot Token (base64-encoded user ID prefix)
+  - pattern: '[MN][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}'
+    label: DISCORD_BOT_TOKEN
+
+  # Discord Webhook URL
+  - pattern: 'https://discord\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+'
+    label: DISCORD_WEBHOOK
+
+  # Facebook/Meta Access Token
+  - pattern: 'EAA[A-Za-z0-9]{50,}'
+    label: FACEBOOK_ACCESS_TOKEN
+
   # Private keys (multiline - handled by state machine in streaming mode)
   # This pattern is for batch mode fallback only
   - pattern: '-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----'
@@ -126,6 +208,11 @@ context_patterns:
   - prefix: 'token:'
     value: '\s*[^\s,;"''\}\[\]]+'
     label: TOKEN_VALUE
+
+  # Azure Storage Account Key
+  - prefix: 'AccountKey='
+    value: '[A-Za-z0-9+/]{88}=='
+    label: AZURE_STORAGE_KEY
 
   # Generic key=value patterns (capitalized)
   - prefix: 'Password='

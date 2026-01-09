@@ -1,0 +1,2 @@
+# Azure Storage Account Key (context pattern - exactly 88 chars + ==)
+AccountKey=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUVWX==

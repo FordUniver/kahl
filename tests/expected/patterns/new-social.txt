@@ -1,0 +1,8 @@
+# Telegram Bot Token
+[REDACTED:TELEGRAM_BOT_TOKEN:45X]
+# Discord Bot Token
+[REDACTED:DISCORD_BOT_TOKEN:63chars]
+# Discord Webhook
+[REDACTED:DISCORD_WEBHOOK:116chars]
+# Facebook Access Token
+[REDACTED:FACEBOOK_ACCESS_TOKEN:64chars]
