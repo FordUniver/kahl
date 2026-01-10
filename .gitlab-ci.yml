@@ -12,16 +12,15 @@ variables:
 # Common script to install test dependencies
 .install_test_deps: &install_test_deps
   - |
-    # Install yq for env.yaml parsing
+    # Install bash, yq, bc for test.sh
+    if command -v apk &>/dev/null; then
+      apk add --no-cache bash bc wget
+    fi
     if ! command -v yq &>/dev/null; then
       YQ_VERSION="v4.50.1"
       YQ_BINARY="yq_linux_amd64"
       wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}" -O /usr/local/bin/yq
       chmod +x /usr/local/bin/yq
-    fi
-    # Install bc for timing calculations
-    if ! command -v bc &>/dev/null; then
-      apk add --no-cache bc 2>/dev/null || apt-get update && apt-get install -y bc || true
     fi
 
 # Template for test jobs
