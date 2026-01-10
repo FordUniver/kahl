@@ -12,12 +12,11 @@ variables:
 # Common script to install test dependencies
 .install_test_deps: &install_test_deps
   - |
-    # Install bash, yq, bc for test.sh (Alpine or Debian)
-    if command -v apk &>/dev/null; then
-      apk add --no-cache bash bc wget
-    elif command -v apt-get &>/dev/null; then
-      apt-get update -qq && apt-get install -y -qq bc wget
+    # Ensure wget is available (slim images may not have it)
+    if ! command -v wget &>/dev/null; then
+      apt-get update -qq && apt-get install -y -qq wget
     fi
+    # Install yq for YAML parsing
     if ! command -v yq &>/dev/null; then
       YQ_VERSION="v4.50.1"
       YQ_BINARY="yq_linux_amd64"
@@ -41,7 +40,7 @@ variables:
 # Python tests (reference implementation)
 test:python:
   <<: *test_template
-  image: python:3.12-alpine
+  image: python:3.12-slim
   variables:
     IMPL: python
 
@@ -58,21 +57,21 @@ test:perl:
 # Ruby tests
 test:ruby:
   <<: *test_template
-  image: ruby:3.3-alpine
+  image: ruby:3.3-slim
   variables:
     IMPL: ruby
 
 # Bun tests
 test:bun:
   <<: *test_template
-  image: oven/bun:1.1-alpine
+  image: oven/bun:1.1-debian
   variables:
     IMPL: bun
 
 # Go tests (requires build)
 test:go:
   <<: *test_template
-  image: golang:1.23-alpine
+  image: golang:1.23
   variables:
     IMPL: go
   before_script:
@@ -82,11 +81,10 @@ test:go:
 # Rust tests (requires build)
 test:rust:
   <<: *test_template
-  image: rust:1.83-alpine
+  image: rust:1.83-slim
   variables:
     IMPL: rust
   before_script:
-    - apk add --no-cache musl-dev
     - *install_test_deps
     - cd rust && cargo build --release && cp target/release/secrets-filter .
 
@@ -104,7 +102,7 @@ test:swift:
 # Benchmark job - runs only for passing implementations
 benchmark:
   stage: benchmark
-  image: python:3.12-alpine
+  image: python:3.12-slim
   needs:
     - job: test:python
       optional: true
@@ -115,9 +113,9 @@ benchmark:
     - job: test:bun
       optional: true
   before_script:
-    - apk add --no-cache perl ruby bash bc wget
+    - apt-get update && apt-get install -y perl ruby curl unzip
     # Install bun
-    - wget -q https://bun.sh/install -O - | BUN_INSTALL=/usr/local bash
+    - curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
     - *install_test_deps
   script:
     - cd tests
