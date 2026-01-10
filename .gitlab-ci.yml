@@ -12,9 +12,11 @@ variables:
 # Common script to install test dependencies
 .install_test_deps: &install_test_deps
   - |
-    # Install bash, yq, bc for test.sh
+    # Install bash, yq, bc for test.sh (Alpine or Debian)
     if command -v apk &>/dev/null; then
       apk add --no-cache bash bc wget
+    elif command -v apt-get &>/dev/null; then
+      apt-get update -qq && apt-get install -y -qq bc wget
     fi
     if ! command -v yq &>/dev/null; then
       YQ_VERSION="v4.50.1"
