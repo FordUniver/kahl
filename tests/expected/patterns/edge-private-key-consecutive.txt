@@ -1,0 +1,5 @@
+[REDACTED:PRIVATE_KEY:multiline]
+intermediate text that should pass through
+[REDACTED:PRIVATE_KEY:multiline]
+more normal text
+[REDACTED:PRIVATE_KEY:multiline]

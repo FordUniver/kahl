@@ -126,6 +126,7 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
 
 const STATE_NORMAL: u8 = 0;
 const STATE_IN_PRIVATE_KEY: u8 = 1;
+const STATE_IN_PRIVATE_KEY_OVERFLOW: u8 = 2;
 // MAX_PRIVATE_KEY_BUFFER and LONG_THRESHOLD come from patterns_gen
 
 struct Pattern {
@@ -767,22 +768,37 @@ fn main() {
                     buffer.clear();
                     state = STATE_NORMAL;
                 } else if buffer.len() > MAX_PRIVATE_KEY_BUFFER {
-                    flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
+                    // Buffer overflow - redact entirely (fail closed, don't leak)
+                    let _ = writeln!(stdout_handle, "[REDACTED:PRIVATE_KEY:multiline]");
+                    let _ = stdout_handle.flush();
                     buffer.clear();
+                    // Transition to overflow state - consume remaining lines silently until END
+                    state = STATE_IN_PRIVATE_KEY_OVERFLOW;
+                }
+            }
+            STATE_IN_PRIVATE_KEY_OVERFLOW => {
+                // Consume lines silently until END marker
+                let is_key_end = private_key_end
+                    .as_ref()
+                    .map(|re| re.is_match(&line))
+                    .unwrap_or(false);
+                if is_key_end {
                     state = STATE_NORMAL;
                 }
+                // No buffering, no output - just wait for END
             }
             _ => {}
         }
     }
 
-    // EOF: handle remaining buffer
-    if !buffer.is_empty() {
-        if state == STATE_IN_PRIVATE_KEY {
-            // Incomplete private key block - redact entirely (fail closed, don't leak)
-            let _ = writeln!(stdout_handle, "[REDACTED:PRIVATE_KEY:multiline]");
-        } else {
-            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
-        }
+    // EOF: handle remaining state
+    if state == STATE_IN_PRIVATE_KEY {
+        // Incomplete private key block - redact entirely (fail closed, don't leak)
+        let _ = writeln!(stdout_handle, "[REDACTED:PRIVATE_KEY:multiline]");
+    } else if state == STATE_IN_PRIVATE_KEY_OVERFLOW {
+        // Already emitted overflow redaction, nothing to do
+    } else if !buffer.is_empty() {
+        // Flush any remaining buffered content
+        flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
     }
 }

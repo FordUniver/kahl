@@ -1,0 +1,11 @@
+-----BEGIN RSA PRIVATE KEY-----
+key1content
+-----END RSA PRIVATE KEY-----
+intermediate text that should pass through
+-----BEGIN EC PRIVATE KEY-----
+key2content
+-----END EC PRIVATE KEY-----
+more normal text
+-----BEGIN DSA PRIVATE KEY-----
+key3content
+-----END DSA PRIVATE KEY-----

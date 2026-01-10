@@ -1,0 +1,10 @@
+-----BEGIN RSA PRIVATE KEY-----
+content before nested
+-----BEGIN EC PRIVATE KEY-----
+nested content
+-----END EC PRIVATE KEY-----
+-----BEGIN RSA PRIVATE KEY-----
+content
+-----END DSA PRIVATE KEY-----
+-----BEGIN RSA PRIVATE KEY-----
+-----END RSA PRIVATE KEY-----

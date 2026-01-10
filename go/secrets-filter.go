@@ -26,6 +26,7 @@ type FilterConfig struct {
 const (
 	StateNormal = iota
 	StateInPrivateKey
+	StateInPrivateKeyOverflow
 )
 
 // classifySegment returns N for digits, A for letters, X for mixed
@@ -803,12 +804,19 @@ func main() {
 				buffer = nil
 				state = StateNormal
 			} else if len(buffer) > MaxPrivateKeyBuffer {
-				for _, l := range buffer {
-					fmt.Print(redactLine(l, secrets, config, entropyConfig))
-				}
+				// Buffer overflow - redact entirely (fail closed, don't leak)
+				fmt.Println("[REDACTED:PRIVATE_KEY:multiline]")
 				buffer = nil
+				// Transition to overflow state - consume remaining lines silently until END
+				state = StateInPrivateKeyOverflow
+			}
+
+		case StateInPrivateKeyOverflow:
+			// Consume lines silently until END marker
+			if privateKeyEnd.MatchString(line) {
 				state = StateNormal
 			}
+			// No buffering, no output - just wait for END
 		}
 
 		if err == io.EOF {
@@ -817,15 +825,16 @@ func main() {
 		_ = hasNewline // suppress unused warning
 	}
 
-	// EOF: handle remaining buffer
-	if len(buffer) > 0 {
-		if state == StateInPrivateKey {
-			// Incomplete private key block - redact entirely (fail closed, don't leak)
-			fmt.Println("[REDACTED:PRIVATE_KEY:multiline]")
-		} else {
-			for _, l := range buffer {
-				fmt.Print(redactLine(l, secrets, config, entropyConfig))
-			}
+	// EOF: handle remaining state
+	if state == StateInPrivateKey {
+		// Incomplete private key block - redact entirely (fail closed, don't leak)
+		fmt.Println("[REDACTED:PRIVATE_KEY:multiline]")
+	} else if state == StateInPrivateKeyOverflow {
+		// Already emitted overflow redaction, nothing to do
+	} else if len(buffer) > 0 {
+		// Flush any remaining buffered content
+		for _, l := range buffer {
+			fmt.Print(redactLine(l, secrets, config, entropyConfig))
 		}
 	}
 }

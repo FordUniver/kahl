@@ -161,6 +161,7 @@ func getFilterConfig() -> FilterConfig? {
 
 let STATE_NORMAL = 0
 let STATE_IN_PRIVATE_KEY = 1
+let STATE_IN_PRIVATE_KEY_OVERFLOW = 2
 
 // MARK: - Compiled Patterns (NSRegularExpression for performance)
 
@@ -695,7 +696,7 @@ func main() {
                     print(redactLine(line, secrets, config, entropyConfig), terminator: "")
                     fflush(stdout)
                 }
-            } else {
+            } else if state == STATE_IN_PRIVATE_KEY {
                 buffer.append(line)
 
                 let lineRange = NSRange(location: 0, length: (line as NSString).length)
@@ -705,10 +706,20 @@ func main() {
                     buffer = []
                     state = STATE_NORMAL
                 } else if buffer.count > maxPrivateKeyBuffer {
-                    flushBufferRedacted(buffer, secrets, config, entropyConfig)
+                    // Buffer overflow - redact entirely (fail closed, don't leak)
+                    print("[REDACTED:PRIVATE_KEY:multiline]")
+                    fflush(stdout)
                     buffer = []
+                    // Transition to overflow state - consume remaining lines silently until END
+                    state = STATE_IN_PRIVATE_KEY_OVERFLOW
+                }
+            } else if state == STATE_IN_PRIVATE_KEY_OVERFLOW {
+                // Consume lines silently until END marker
+                let lineRange = NSRange(location: 0, length: (line as NSString).length)
+                if privateKeyEndRegex.firstMatch(in: line, range: lineRange) != nil {
                     state = STATE_NORMAL
                 }
+                // No buffering, no output - just wait for END
             }
         }
 
@@ -717,21 +728,23 @@ func main() {
             let line = String(decoding: pendingData, as: UTF8.self)
             if state == STATE_NORMAL {
                 print(redactLine(line, secrets, config, entropyConfig), terminator: "")
-            } else {
+            } else if state == STATE_IN_PRIVATE_KEY {
                 buffer.append(line)
             }
+            // In overflow state, discard the line
             break
         }
     }
 
-    // EOF: handle remaining buffer
-    if !buffer.isEmpty {
-        if state == STATE_IN_PRIVATE_KEY {
-            // Incomplete private key block - redact entirely (fail closed, don't leak)
-            print("[REDACTED:PRIVATE_KEY:multiline]")
-        } else {
-            flushBufferRedacted(buffer, secrets, config, entropyConfig)
-        }
+    // EOF: handle remaining state
+    if state == STATE_IN_PRIVATE_KEY {
+        // Incomplete private key block - redact entirely (fail closed, don't leak)
+        print("[REDACTED:PRIVATE_KEY:multiline]")
+    } else if state == STATE_IN_PRIVATE_KEY_OVERFLOW {
+        // Already emitted overflow redaction, nothing to do
+    } else if !buffer.isEmpty {
+        // Flush any remaining buffered content
+        flushBufferRedacted(buffer, secrets, config, entropyConfig)
     }
 }
 
