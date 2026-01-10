@@ -58,6 +58,9 @@ test:ruby:
   image: ruby:3.3-slim
   variables:
     IMPL: ruby
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq locales && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
+    - *install_test_deps
 
 # Bun tests
 test:bun:
@@ -95,7 +98,7 @@ test:swift:
   before_script:
     - apt-get update && apt-get install -y wget
     - *install_test_deps
-    - (cd swift && swiftc -O -o secrets-filter main.swift)
+    - (cd swift && swiftc -O -o secrets-filter main.swift patterns_gen.swift)
 
 # Benchmark job - runs only for passing implementations
 benchmark:
