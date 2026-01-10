@@ -122,11 +122,8 @@ benchmark:
     - cd tests
     # Generate corpus if needed
     - chmod +x corpus/generate-corpus.sh && ./corpus/generate-corpus.sh
-    # Run benchmarks for scripting languages (always available)
-    - ./bench.sh 20 python
-    - ./bench.sh 20 perl
-    - ./bench.sh 20 ruby
-    - ./bench.sh 20 bun
+    # Run benchmarks for all available scripting languages in one table
+    - ./bench.sh 20
     - echo "=== Benchmark Results ==="
     - cat benchmark-results.csv
   artifacts:
