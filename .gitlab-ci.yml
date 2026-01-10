@@ -12,10 +12,8 @@ variables:
 # Common script to install test dependencies
 .install_test_deps: &install_test_deps
   - |
-    # Ensure wget is available (slim images may not have it)
-    if ! command -v wget &>/dev/null; then
-      apt-get update -qq && apt-get install -y -qq wget
-    fi
+    # Ensure wget and bc are available (slim images may not have them)
+    apt-get update -qq && apt-get install -y -qq wget bc
     # Install yq for YAML parsing
     if ! command -v yq &>/dev/null; then
       YQ_VERSION="v4.50.1"
