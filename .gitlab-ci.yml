@@ -74,7 +74,7 @@ test:go:
     IMPL: go
   before_script:
     - *install_test_deps
-    - cd go && go build -ldflags="-s -w" -o secrets-filter secrets-filter.go patterns_gen.go
+    - (cd go && go build -ldflags="-s -w" -o secrets-filter secrets-filter.go patterns_gen.go)
 
 # Rust tests (requires build)
 test:rust:
@@ -84,7 +84,7 @@ test:rust:
     IMPL: rust
   before_script:
     - *install_test_deps
-    - cd rust && cargo build --release && cp target/release/secrets-filter .
+    - (cd rust && cargo build --release && cp target/release/secrets-filter .)
 
 # Swift tests (requires build)
 test:swift:
@@ -95,7 +95,7 @@ test:swift:
   before_script:
     - apt-get update && apt-get install -y wget
     - *install_test_deps
-    - cd swift && swiftc -O -o secrets-filter main.swift
+    - (cd swift && swiftc -O -o secrets-filter main.swift)
 
 # Benchmark job - runs only for passing implementations
 benchmark:
