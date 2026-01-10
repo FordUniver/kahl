@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Benchmark secrets-filter implementations with filter modes
+# Benchmark secrets-filter implementations
 # Usage: ./bench.sh [iterations] [implementation]
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Source helpers
 source "$SCRIPT_DIR/lib/helpers.sh"
 
 ITERATIONS=${1:-50}
@@ -21,13 +20,15 @@ if [[ ! -f "$CORPUS" ]]; then
     echo
 fi
 
-CORPUS_LINES=$(wc -l < "$CORPUS")
-CORPUS_SIZE=$(du -h "$CORPUS" | cut -f1)
+CORPUS_LINES=$(wc -l < "$CORPUS" | tr -d ' ')
 
-echo "Benchmarking secrets-filter implementations"
-echo "============================================"
-echo "Iterations: $ITERATIONS"
-echo "Corpus: $CORPUS_LINES lines ($CORPUS_SIZE)"
+# Prepare scenario inputs
+SHORT_INPUT="normal output line with no secrets"
+head -100 "$CORPUS" > /tmp/bench-medium.txt
+head -1000 "$CORPUS" > /tmp/bench-large.txt
+
+echo "secrets-filter Benchmark (${ITERATIONS} iterations)"
+echo "======================================================"
 echo
 
 # Find implementations
@@ -38,62 +39,72 @@ if [[ ${#IMPLS[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# CSV header for machine-readable output
+# CSV output
 CSV_FILE="$SCRIPT_DIR/benchmark-results.csv"
-echo "implementation,mode,iterations,total_ms,per_call_ms,lines_per_sec" > "$CSV_FILE"
+echo "implementation,scenario,lines,iterations,per_call_ms" > "$CSV_FILE"
 
-# Benchmark function
-benchmark() {
+# Benchmark function for scenarios
+bench_scenario() {
     local impl="$1"
-    local mode="$2"
-    local name="$impl/$mode"
+    local scenario="$2"
+    local input_file="$3"
+    local lines="$4"
 
-    # Build env for this mode - include LANG for Unicode support
-    local -a env_vars=("PATH=$PATH" "HOME=/nonexistent" "TMPDIR=/tmp" "LANG=en_US.UTF-8" "LC_ALL=en_US.UTF-8")
-    if [[ "$mode" == "values" || "$mode" == "all" ]]; then
-        while IFS= read -r line; do
-            [[ -n "$line" ]] && env_vars+=("$line")
-        done < <(load_test_env)
-    fi
+    local start end per_call
 
-    local filter_arg=""
-    [[ "$mode" != "all" ]] && filter_arg="--filter=$mode"
-
-    # Warmup (3 iterations)
+    # Warmup
     for _ in {1..3}; do
-        env -i "${env_vars[@]}" "$ROOT_DIR/$impl/secrets-filter" $filter_arg < "$CORPUS" > /dev/null 2>&1 || true
+        if [[ "$input_file" == "-" ]]; then
+            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/secrets-filter" > /dev/null 2>&1 || true
+        else
+            "$ROOT_DIR/$impl/secrets-filter" < "$input_file" > /dev/null 2>&1 || true
+        fi
     done
 
     # Benchmark
-    local start end elapsed per_call lines_per_sec
-    start=$(date +%s.%N)
-
+    start=$(gdate +%s.%N 2>/dev/null || date +%s.%N)
     for ((i = 0; i < ITERATIONS; i++)); do
-        env -i "${env_vars[@]}" "$ROOT_DIR/$impl/secrets-filter" $filter_arg < "$CORPUS" > /dev/null 2>&1 || true
+        if [[ "$input_file" == "-" ]]; then
+            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/secrets-filter" > /dev/null 2>&1 || true
+        else
+            "$ROOT_DIR/$impl/secrets-filter" < "$input_file" > /dev/null 2>&1 || true
+        fi
     done
+    end=$(gdate +%s.%N 2>/dev/null || date +%s.%N)
 
-    end=$(date +%s.%N)
-    elapsed=$(echo "scale=3; ($end - $start) * 1000" | bc)
-    per_call=$(echo "scale=2; $elapsed / $ITERATIONS" | bc)
-    lines_per_sec=$(echo "scale=0; $CORPUS_LINES * $ITERATIONS * 1000 / $elapsed" | bc)
+    per_call=$(echo "scale=1; ($end - $start) * 1000 / $ITERATIONS" | bc)
+    echo "$per_call"
 
-    printf "  %-20s %8s ms/call  (%s lines/sec)\n" "$name:" "$per_call" "$lines_per_sec"
-
-    # Write to CSV
-    echo "$impl,$mode,$ITERATIONS,$elapsed,$per_call,$lines_per_sec" >> "$CSV_FILE"
+    # CSV
+    echo "$impl,$scenario,$lines,$ITERATIONS,$per_call" >> "$CSV_FILE"
 }
 
-# Run benchmarks
+# === Scenario Benchmark (default mode: values+patterns) ===
+echo "Scenario Benchmark (default mode: values+patterns)"
+echo "---------------------------------------------------"
+echo "Scenarios: Short=1 line, Medium=100, Large=1000, Corpus=${CORPUS_LINES}"
+echo
+
+printf "%-10s %12s %12s %12s %12s\n" "Impl" "Short(1)" "Med(100)" "Large(1K)" "Corpus"
+printf "%-10s %12s %12s %12s %12s\n" "----" "--------" "--------" "---------" "------"
+
 for impl in "${IMPLS[@]}"; do
-    echo "=== $impl ==="
-    for mode in patterns values all; do
-        benchmark "$impl" "$mode"
-    done
-    echo
+    short=$(bench_scenario "$impl" "short" "-" 1)
+    med=$(bench_scenario "$impl" "medium" "/tmp/bench-medium.txt" 100)
+    large=$(bench_scenario "$impl" "large" "/tmp/bench-large.txt" 1000)
+    corpus=$(bench_scenario "$impl" "corpus" "$CORPUS" "$CORPUS_LINES")
+
+    printf "%-10s %12s %12s %12s %12s\n" "$impl" "${short}ms" "${med}ms" "${large}ms" "${corpus}ms"
 done
 
-echo "============================================"
+echo
+echo "======================================================"
 echo "Results saved to: $CSV_FILE"
 echo
-echo "Summary: Lower ms/call is better"
-echo "Compiled languages (Go, Rust, Swift) are typically fastest"
+echo "Interpretation:"
+echo "  Short/Medium: Typical command output (startup-dominated)"
+echo "  Large/Corpus: Build logs, npm install (throughput-dominated)"
+echo "  Go/Rust best for startup; Python competitive at throughput"
+
+# Cleanup
+rm -f /tmp/bench-medium.txt /tmp/bench-large.txt
