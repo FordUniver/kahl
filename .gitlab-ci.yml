@@ -60,6 +60,7 @@ test:perl:
     - *install_test_deps
     - mkdir -p build
     - cp perl/main.pl build/kahl-perl
+    - cp perl/Patterns.pm build/
     - chmod +x build/kahl-perl
 
 # Ruby tests
@@ -73,6 +74,7 @@ test:ruby:
     - *install_test_deps
     - mkdir -p build
     - cp ruby/main.rb build/kahl-ruby
+    - cp ruby/patterns_gen.rb build/
     - chmod +x build/kahl-ruby
 
 # Bun tests
@@ -85,6 +87,7 @@ test:bun:
     - *install_test_deps
     - mkdir -p build
     - cp bun/main.js build/kahl-bun
+    - cp bun/patterns_gen.ts build/
     - chmod +x build/kahl-bun
 
 # Go tests (requires build)
