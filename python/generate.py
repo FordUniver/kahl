@@ -24,7 +24,7 @@ PATTERNS_YAML = PATTERNS_DIR / "patterns.yaml"
 ENV_YAML = PATTERNS_DIR / "env.yaml"
 ENTROPY_YAML = PATTERNS_DIR / "entropy.yaml"
 OUTPUT_FILE = SCRIPT_DIR / "patterns_gen.py"
-SECRETS_FILTER = SCRIPT_DIR / "kahl"
+MAIN_SCRIPT = SCRIPT_DIR / "main.py"
 STANDALONE_OUTPUT = SCRIPT_DIR / "kahl-standalone"
 
 
@@ -343,10 +343,10 @@ def extract_filter_logic() -> str:
     patterns_gen import block (lines 81+), which is the actual filter logic.
     Also adjusts imports to remove subprocess and Path (not needed standalone).
     """
-    if not SECRETS_FILTER.exists():
-        raise FileNotFoundError(f"kahl not found: {SECRETS_FILTER}")
+    if not MAIN_SCRIPT.exists():
+        raise FileNotFoundError(f"kahl not found: {MAIN_SCRIPT}")
 
-    lines = SECRETS_FILTER.read_text().splitlines()
+    lines = MAIN_SCRIPT.read_text().splitlines()
 
     # Find the line where filter logic starts (after 'from patterns_gen import')
     # Look for VALID_FILTERS definition as the start of real logic

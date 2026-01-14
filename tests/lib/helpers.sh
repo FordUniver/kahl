@@ -18,13 +18,13 @@ else
     RED='' GREEN='' YELLOW='' RESET=''
 fi
 
-# Find all implementations
+# Find all implementations in build/
 find_implementations() {
     local -a impls=()
     local impl_filter="${1:-}"
 
     for dir in python perl go ruby rust bun swift; do
-        if [[ -x "$ROOT_DIR/$dir/kahl" ]]; then
+        if [[ -x "$ROOT_DIR/build/kahl-$dir" ]]; then
             if [[ -z "$impl_filter" || "$dir" == "$impl_filter" ]]; then
                 impls+=("$dir")
             fi
@@ -101,7 +101,7 @@ run_impl() {
     args+=("--filter=$mode")
     args+=("$@")
 
-    run_in_env "$mode" "$ROOT_DIR/$impl/kahl" "${args[@]}"
+    run_in_env "$mode" "$ROOT_DIR/build/kahl-$impl" "${args[@]}"
 }
 
 # Compare output with expected file

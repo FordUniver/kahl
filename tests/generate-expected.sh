@@ -16,8 +16,9 @@ echo "======================================================="
 echo
 
 # Verify Python implementation exists
-if [[ ! -x "$ROOT_DIR/python/kahl" ]]; then
-    echo "ERROR: Python implementation not found at $ROOT_DIR/python/kahl"
+if [[ ! -x "$ROOT_DIR/build/kahl-python" ]]; then
+    echo "ERROR: Python implementation not found at $ROOT_DIR/build/kahl-python"
+    echo "Run ./build.sh first to build all implementations"
     exit 1
 fi
 
@@ -48,7 +49,7 @@ generate() {
 
     # Run Python implementation
     # shellcheck disable=SC2086
-    $env_cmd "$ROOT_DIR/python/kahl" $filter_arg < "$input_file" > "$output_file"
+    $env_cmd "$ROOT_DIR/build/kahl-python" $filter_arg < "$input_file" > "$output_file"
 
     echo "  Generated: $output_file"
 }

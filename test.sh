@@ -8,15 +8,15 @@ cd "$(dirname "$0")"
 # Clear CLAUDE_CODE_SHELL_PREFIX to avoid filtering test data
 unset CLAUDE_CODE_SHELL_PREFIX
 
-# Find implementations
+# Find implementations in build/
 declare -a IMPLS=()
-[[ -x python/kahl ]] && IMPLS+=(python/kahl)
-[[ -x perl/kahl ]] && IMPLS+=(perl/kahl)
-[[ -x go/kahl ]] && IMPLS+=(go/kahl)
-[[ -x ruby/kahl ]] && IMPLS+=(ruby/kahl)
-[[ -x rust/kahl ]] && IMPLS+=(rust/kahl)
-[[ -x bun/kahl ]] && IMPLS+=(bun/kahl)
-[[ -x swift/kahl ]] && IMPLS+=(swift/kahl)
+[[ -x build/kahl-python ]] && IMPLS+=(build/kahl-python)
+[[ -x build/kahl-perl ]] && IMPLS+=(build/kahl-perl)
+[[ -x build/kahl-go ]] && IMPLS+=(build/kahl-go)
+[[ -x build/kahl-ruby ]] && IMPLS+=(build/kahl-ruby)
+[[ -x build/kahl-rust ]] && IMPLS+=(build/kahl-rust)
+[[ -x build/kahl-bun ]] && IMPLS+=(build/kahl-bun)
+[[ -x build/kahl-swift ]] && IMPLS+=(build/kahl-swift)
 
 if [[ ${#IMPLS[@]} -eq 0 ]]; then
     echo "No implementations found!"
@@ -30,6 +30,11 @@ echo
 PASS=0
 FAIL=0
 
+# Extract implementation name from path (e.g., build/kahl-python -> python)
+impl_name() {
+    basename "$1" | sed 's/^kahl-//'
+}
+
 # Test helper - checks if output matches pattern
 test_case() {
     local name="$1"
@@ -42,10 +47,10 @@ test_case() {
         result=$(echo -n "$input" | ./"$impl" 2>/dev/null) || result="[ERROR]"
 
         if echo "$result" | grep -qE "$expect"; then
-            printf "  %-25s pass\n" "$(basename "$(dirname "$impl")"):"
+            printf "  %-25s pass\n" "$(impl_name "$impl"):"
             ((PASS++)) || true
         else
-            printf "  %-25s FAIL\n" "$(basename "$(dirname "$impl")"):"
+            printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
             printf "    expected: %s\n" "$expect"
             printf "    got:      %s\n" "$result"
             ((FAIL++)) || true
@@ -66,10 +71,10 @@ test_exact() {
         result=$(echo -n "$input" | ./"$impl" 2>/dev/null) || result="[ERROR]"
 
         if [[ "$result" == "$expect" ]]; then
-            printf "  %-25s pass\n" "$(basename "$(dirname "$impl")"):"
+            printf "  %-25s pass\n" "$(impl_name "$impl"):"
             ((PASS++)) || true
         else
-            printf "  %-25s FAIL\n" "$(basename "$(dirname "$impl")"):"
+            printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
             printf "    expected: %s\n" "$expect"
             printf "    got:      %s\n" "$result"
             ((FAIL++)) || true
@@ -255,10 +260,10 @@ echo "=== Private key with surrounding text ==="
 for impl in "${IMPLS[@]}"; do
     result=$(printf '%s' $'before\n-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\nafter' | ./"$impl" 2>/dev/null) || result="[ERROR]"
     if echo "$result" | grep -q 'before' && echo "$result" | grep -q '\[REDACTED:PRIVATE_KEY:multiline\]' && echo "$result" | grep -q 'after'; then
-        printf "  %-25s pass\n" "$(basename "$(dirname "$impl")"):"
+        printf "  %-25s pass\n" "$(impl_name "$impl"):"
         ((PASS++)) || true
     else
-        printf "  %-25s FAIL\n" "$(basename "$(dirname "$impl")"):"
+        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
         printf "    got: %s\n" "$result"
         ((FAIL++)) || true
     fi
@@ -323,10 +328,10 @@ for impl in "${IMPLS[@]}"; do
     expected=$'line1\nline2\nline3'
 
     if [[ "$result" == "$expected" || "$result" == "$expected"$'\n' ]]; then
-        printf "  %-25s pass\n" "$(basename "$(dirname "$impl")"):"
+        printf "  %-25s pass\n" "$(impl_name "$impl"):"
         ((PASS++))
     else
-        printf "  %-25s FAIL\n" "$(basename "$(dirname "$impl")"):"
+        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
         printf "    expected 3 lines, got: %s\n" "$(echo "$result" | wc -l | tr -d ' ') lines"
         ((FAIL++))
     fi
@@ -342,10 +347,10 @@ for impl in "${IMPLS[@]}"; do
     elapsed=$(echo "$endtime - $start" | bc)
 
     if [[ "$result" == "test line" ]] && (( $(echo "$elapsed < 1" | bc -l) )); then
-        printf "  %-25s pass (%.2fs)\n" "$(basename "$(dirname "$impl")"):" "$elapsed"
+        printf "  %-25s pass (%.2fs)\n" "$(impl_name "$impl"):" "$elapsed"
         ((PASS++))
     else
-        printf "  %-25s FAIL (%.2fs)\n" "$(basename "$(dirname "$impl")"):" "$elapsed"
+        printf "  %-25s FAIL (%.2fs)\n" "$(impl_name "$impl"):" "$elapsed"
         ((FAIL++))
     fi
 done

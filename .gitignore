@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+
+# Compiled binaries in language directories (old structure)
+go/kahl
+rust/kahl
+swift/kahl
+
+# Python generated files
+python/__pycache__/
+python/*.pyc
+python/kahl-standalone
+python/patterns_gen.py
+
+# Language-specific build directories
+rust/target/
+go/go.mod
+go/go.sum
+
+# Test artifacts
+tests/*.log
+tests/tmp/

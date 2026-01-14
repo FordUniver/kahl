@@ -27,8 +27,9 @@ variables:
   stage: test
   before_script:
     - *install_test_deps
+    - mkdir -p build
   script:
-    - cd tests && ./test.sh -q "$IMPL"
+    - ./test.sh
   artifacts:
     when: on_failure
     paths:
@@ -41,6 +42,12 @@ test:python:
   image: python:3.12-slim
   variables:
     IMPL: python
+  before_script:
+    - *install_test_deps
+    - mkdir -p build
+    - (cd python && python3 generate.py)
+    - cp python/kahl-standalone build/kahl-python
+    - chmod +x build/kahl-python
 
 # Perl tests
 test:perl:
@@ -51,6 +58,9 @@ test:perl:
   before_script:
     - apt-get update && apt-get install -y wget
     - *install_test_deps
+    - mkdir -p build
+    - cp perl/main.pl build/kahl-perl
+    - chmod +x build/kahl-perl
 
 # Ruby tests
 test:ruby:
@@ -61,6 +71,9 @@ test:ruby:
   before_script:
     - apt-get update -qq && apt-get install -y -qq locales && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
     - *install_test_deps
+    - mkdir -p build
+    - cp ruby/main.rb build/kahl-ruby
+    - chmod +x build/kahl-ruby
 
 # Bun tests
 test:bun:
@@ -68,6 +81,11 @@ test:bun:
   image: oven/bun:1.1-debian
   variables:
     IMPL: bun
+  before_script:
+    - *install_test_deps
+    - mkdir -p build
+    - cp bun/main.js build/kahl-bun
+    - chmod +x build/kahl-bun
 
 # Go tests (requires build)
 test:go:
@@ -77,7 +95,8 @@ test:go:
     IMPL: go
   before_script:
     - *install_test_deps
-    - (cd go && go build -ldflags="-s -w" -o kahl kahl.go patterns_gen.go)
+    - mkdir -p build
+    - (cd go && go build -ldflags="-s -w" -o ../build/kahl-go main.go patterns_gen.go)
 
 # Rust tests (requires build)
 test:rust:
@@ -87,7 +106,9 @@ test:rust:
     IMPL: rust
   before_script:
     - *install_test_deps
-    - (cd rust && cargo build --release && cp target/release/kahl .)
+    - mkdir -p build
+    - (cd rust && cargo build --release --quiet)
+    - cp rust/target/release/kahl build/kahl-rust
 
 # Swift tests (requires build)
 test:swift:
@@ -98,7 +119,8 @@ test:swift:
   before_script:
     - apt-get update && apt-get install -y wget
     - *install_test_deps
-    - (cd swift && swiftc -O -o kahl main.swift patterns_gen.swift)
+    - mkdir -p build
+    - (cd swift && swiftc -O -whole-module-optimization -o ../build/kahl-swift main.swift patterns_gen.swift)
 
 # Benchmark job - runs only for passing implementations
 benchmark:

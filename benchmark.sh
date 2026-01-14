@@ -21,15 +21,15 @@ echo "Mode: $MODE"
 echo "========================================"
 echo
 
-# Find implementations
+# Find implementations in build/
 declare -a IMPLS=()
-[[ -x python/kahl ]] && IMPLS+=(python/kahl)
-[[ -x perl/kahl ]] && IMPLS+=(perl/kahl)
-[[ -x go/kahl ]] && IMPLS+=(go/kahl)
-[[ -x ruby/kahl ]] && IMPLS+=(ruby/kahl)
-[[ -x rust/kahl ]] && IMPLS+=(rust/kahl)
-[[ -x bun/kahl ]] && IMPLS+=(bun/kahl)
-[[ -x swift/kahl ]] && IMPLS+=(swift/kahl)
+[[ -x build/kahl-python ]] && IMPLS+=(build/kahl-python)
+[[ -x build/kahl-perl ]] && IMPLS+=(build/kahl-perl)
+[[ -x build/kahl-go ]] && IMPLS+=(build/kahl-go)
+[[ -x build/kahl-ruby ]] && IMPLS+=(build/kahl-ruby)
+[[ -x build/kahl-rust ]] && IMPLS+=(build/kahl-rust)
+[[ -x build/kahl-bun ]] && IMPLS+=(build/kahl-bun)
+[[ -x build/kahl-swift ]] && IMPLS+=(build/kahl-swift)
 
 benchmark() {
     local name="$1"

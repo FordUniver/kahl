@@ -55,9 +55,9 @@ bench_scenario() {
     # Warmup
     for _ in {1..3}; do
         if [[ "$input_file" == "-" ]]; then
-            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/kahl" > /dev/null 2>&1 || true
+            echo "$SHORT_INPUT" | "$ROOT_DIR/build/kahl-$impl" > /dev/null 2>&1 || true
         else
-            "$ROOT_DIR/$impl/kahl" < "$input_file" > /dev/null 2>&1 || true
+            "$ROOT_DIR/build/kahl-$impl" < "$input_file" > /dev/null 2>&1 || true
         fi
     done
 
@@ -65,9 +65,9 @@ bench_scenario() {
     start=$(gdate +%s.%N 2>/dev/null || date +%s.%N)
     for ((i = 0; i < ITERATIONS; i++)); do
         if [[ "$input_file" == "-" ]]; then
-            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/kahl" > /dev/null 2>&1 || true
+            echo "$SHORT_INPUT" | "$ROOT_DIR/build/kahl-$impl" > /dev/null 2>&1 || true
         else
-            "$ROOT_DIR/$impl/kahl" < "$input_file" > /dev/null 2>&1 || true
+            "$ROOT_DIR/build/kahl-$impl" < "$input_file" > /dev/null 2>&1 || true
         fi
     done
     end=$(gdate +%s.%N 2>/dev/null || date +%s.%N)
