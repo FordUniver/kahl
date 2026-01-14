@@ -184,7 +184,7 @@ run_test() {
 
     # Run and compare
     local result expected
-    result=$($env_cmd ./"$impl"/secrets-filter $filter_arg < "fixtures/$input_file" 2>/dev/null)
+    result=$($env_cmd ./"$impl"/kahl $filter_arg < "fixtures/$input_file" 2>/dev/null)
     expected=$(cat "expected/$expected_file")
 
     if [[ "$result" == "$expected" ]]; then
@@ -239,12 +239,12 @@ for impl in "${IMPLS[@]}"; do
         [[ "$mode" != "patterns" ]] && env_cmd+=" $(load_test_env | tr '\n' ' ')"
 
         # Warmup
-        $env_cmd ./"$impl"/secrets-filter --filter=$mode < "$CORPUS" >/dev/null
+        $env_cmd ./"$impl"/kahl --filter=$mode < "$CORPUS" >/dev/null
 
         # Benchmark
         start=$(date +%s.%N)
         for ((i=0; i<ITERATIONS; i++)); do
-            $env_cmd ./"$impl"/secrets-filter --filter=$mode < "$CORPUS" >/dev/null
+            $env_cmd ./"$impl"/kahl --filter=$mode < "$CORPUS" >/dev/null
         done
         end=$(date +%s.%N)
 

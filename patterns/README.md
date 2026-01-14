@@ -1,6 +1,6 @@
 # Pattern Definitions
 
-This directory contains the single source of truth for all secrets-filter patterns.
+This directory contains the single source of truth for all kahl patterns.
 
 ## Files
 

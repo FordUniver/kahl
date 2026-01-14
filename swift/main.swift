@@ -1,6 +1,6 @@
-// secrets-filter: Filter stdin for secrets, redact with labels
+// kahl: Filter stdin for secrets, redact with labels
 // Streaming mode with state machine for private keys
-// Build: swiftc -O -whole-module-optimization -o secrets-filter main.swift patterns_gen.swift
+// Build: swiftc -O -whole-module-optimization -o kahl main.swift patterns_gen.swift
 //
 // Filter modes:
 //   --filter=values    - redact known secret values from environment
@@ -112,13 +112,13 @@ func parseFilterArgs() -> (FilterConfig, Bool)? {
                 config.entropyEnabled = true
                 hadValidFilter = true
             default:
-                fputs("secrets-filter: unknown filter '\(filter)', ignoring\n", stderr)
+                fputs("kahl: unknown filter '\(filter)', ignoring\n", stderr)
             }
         }
     }
 
     if hadFilterArg && !hadValidFilter {
-        fputs("secrets-filter: no valid filters specified\n", stderr)
+        fputs("kahl: no valid filters specified\n", stderr)
         return nil
     }
 

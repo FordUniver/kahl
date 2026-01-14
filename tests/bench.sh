@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Benchmark secrets-filter implementations
+# Benchmark kahl implementations
 # Usage: ./bench.sh [iterations] [implementation]
 set -uo pipefail
 
@@ -27,7 +27,7 @@ SHORT_INPUT="normal output line with no secrets"
 head -100 "$CORPUS" > /tmp/bench-medium.txt
 head -1000 "$CORPUS" > /tmp/bench-large.txt
 
-echo "secrets-filter Benchmark (${ITERATIONS} iterations)"
+echo "kahl Benchmark (${ITERATIONS} iterations)"
 echo "======================================================"
 echo
 
@@ -55,9 +55,9 @@ bench_scenario() {
     # Warmup
     for _ in {1..3}; do
         if [[ "$input_file" == "-" ]]; then
-            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/secrets-filter" > /dev/null 2>&1 || true
+            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/kahl" > /dev/null 2>&1 || true
         else
-            "$ROOT_DIR/$impl/secrets-filter" < "$input_file" > /dev/null 2>&1 || true
+            "$ROOT_DIR/$impl/kahl" < "$input_file" > /dev/null 2>&1 || true
         fi
     done
 
@@ -65,9 +65,9 @@ bench_scenario() {
     start=$(gdate +%s.%N 2>/dev/null || date +%s.%N)
     for ((i = 0; i < ITERATIONS; i++)); do
         if [[ "$input_file" == "-" ]]; then
-            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/secrets-filter" > /dev/null 2>&1 || true
+            echo "$SHORT_INPUT" | "$ROOT_DIR/$impl/kahl" > /dev/null 2>&1 || true
         else
-            "$ROOT_DIR/$impl/secrets-filter" < "$input_file" > /dev/null 2>&1 || true
+            "$ROOT_DIR/$impl/kahl" < "$input_file" > /dev/null 2>&1 || true
         fi
     done
     end=$(gdate +%s.%N 2>/dev/null || date +%s.%N)

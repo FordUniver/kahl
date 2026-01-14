@@ -8,7 +8,7 @@
 #   - patterns/entropy.yaml
 #
 # To regenerate: python python/generate.py
-"""Auto-generated pattern definitions for secrets-filter.
+"""Auto-generated pattern definitions for kahl.
 
 This module exports:
 - PATTERNS: Direct regex patterns (regex_string, label)

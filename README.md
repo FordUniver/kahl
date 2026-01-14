@@ -1,4 +1,4 @@
-# secrets-filter
+# kahl
 
 Streaming filter that redacts secrets from stdin before they appear in conversation history.
 

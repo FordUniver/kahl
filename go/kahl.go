@@ -1,5 +1,5 @@
-// secrets-filter: Filter stdin for secrets, redact with labels
-// Build: go build -ldflags="-s -w" -o secrets-filter secrets-filter.go patterns_gen.go
+// kahl: Filter stdin for secrets, redact with labels
+// Build: go build -ldflags="-s -w" -o kahl kahl.go patterns_gen.go
 package main
 
 import (
@@ -221,12 +221,12 @@ func parseFilterConfig() FilterConfig {
 
 		// Warn about invalid filters
 		for _, invalid := range invalidFilters {
-			fmt.Fprintf(os.Stderr, "secrets-filter: unknown filter '%s', ignoring\n", strings.TrimSpace(invalid))
+			fmt.Fprintf(os.Stderr, "kahl: unknown filter '%s', ignoring\n", strings.TrimSpace(invalid))
 		}
 
 		// Error if no valid filters found
 		if !validFound {
-			fmt.Fprintln(os.Stderr, "secrets-filter: no valid filters specified")
+			fmt.Fprintln(os.Stderr, "kahl: no valid filters specified")
 			os.Exit(1)
 		}
 	} else {

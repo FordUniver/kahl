@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Benchmark secrets-filter implementations
+# Benchmark kahl implementations
 # Usage: ./benchmark.sh [iterations] [mode]
 # Modes: default, values, patterns, entropy, all
 set -euo pipefail
@@ -15,7 +15,7 @@ MULTILINE=$'-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\ndata\n-----END RS
 MIXED="Token: $GITHUB_PAT and password=secret123"
 HIGH_ENTROPY="api_key=xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6"
 
-echo "Benchmarking secrets-filter implementations"
+echo "Benchmarking kahl implementations"
 echo "Iterations: $ITERATIONS"
 echo "Mode: $MODE"
 echo "========================================"
@@ -23,13 +23,13 @@ echo
 
 # Find implementations
 declare -a IMPLS=()
-[[ -x python/secrets-filter ]] && IMPLS+=(python/secrets-filter)
-[[ -x perl/secrets-filter ]] && IMPLS+=(perl/secrets-filter)
-[[ -x go/secrets-filter ]] && IMPLS+=(go/secrets-filter)
-[[ -x ruby/secrets-filter ]] && IMPLS+=(ruby/secrets-filter)
-[[ -x rust/secrets-filter ]] && IMPLS+=(rust/secrets-filter)
-[[ -x bun/secrets-filter ]] && IMPLS+=(bun/secrets-filter)
-[[ -x swift/secrets-filter ]] && IMPLS+=(swift/secrets-filter)
+[[ -x python/kahl ]] && IMPLS+=(python/kahl)
+[[ -x perl/kahl ]] && IMPLS+=(perl/kahl)
+[[ -x go/kahl ]] && IMPLS+=(go/kahl)
+[[ -x ruby/kahl ]] && IMPLS+=(ruby/kahl)
+[[ -x rust/kahl ]] && IMPLS+=(rust/kahl)
+[[ -x bun/kahl ]] && IMPLS+=(bun/kahl)
+[[ -x swift/kahl ]] && IMPLS+=(swift/kahl)
 
 benchmark() {
     local name="$1"

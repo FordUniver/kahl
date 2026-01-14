@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Test suite for secrets-filter implementations
+# Test suite for kahl implementations
 # Tests Python, Perl, Go, Ruby, Rust, Bun, Swift versions
-# allow-secrets - bypass secrets-filter for test data
+# allow-secrets - bypass kahl for test data
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -10,13 +10,13 @@ unset CLAUDE_CODE_SHELL_PREFIX
 
 # Find implementations
 declare -a IMPLS=()
-[[ -x python/secrets-filter ]] && IMPLS+=(python/secrets-filter)
-[[ -x perl/secrets-filter ]] && IMPLS+=(perl/secrets-filter)
-[[ -x go/secrets-filter ]] && IMPLS+=(go/secrets-filter)
-[[ -x ruby/secrets-filter ]] && IMPLS+=(ruby/secrets-filter)
-[[ -x rust/secrets-filter ]] && IMPLS+=(rust/secrets-filter)
-[[ -x bun/secrets-filter ]] && IMPLS+=(bun/secrets-filter)
-[[ -x swift/secrets-filter ]] && IMPLS+=(swift/secrets-filter)
+[[ -x python/kahl ]] && IMPLS+=(python/kahl)
+[[ -x perl/kahl ]] && IMPLS+=(perl/kahl)
+[[ -x go/kahl ]] && IMPLS+=(go/kahl)
+[[ -x ruby/kahl ]] && IMPLS+=(ruby/kahl)
+[[ -x rust/kahl ]] && IMPLS+=(rust/kahl)
+[[ -x bun/kahl ]] && IMPLS+=(bun/kahl)
+[[ -x swift/kahl ]] && IMPLS+=(swift/kahl)
 
 if [[ ${#IMPLS[@]} -eq 0 ]]; then
     echo "No implementations found!"

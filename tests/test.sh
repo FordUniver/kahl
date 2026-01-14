@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Test suite for secrets-filter implementations
+# Test suite for kahl implementations
 # Tests pattern, value, and combined filtering modes
-# allow-secrets - bypass secrets-filter for test data
+# allow-secrets - bypass kahl for test data
 set -uo pipefail
 # Note: not using -e to allow tests to fail without exiting
 
@@ -198,7 +198,7 @@ run_cli_tests() {
         fi
 
         # Test --filter=all includes entropy (key behavior change)
-        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" --filter=all <<< "$entropy_input" 2>/dev/null) || result=""
+        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/kahl" --filter=all <<< "$entropy_input" 2>/dev/null) || result=""
         if [[ "$result" =~ $entropy_redacted ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/--filter=all-entropy"
             record_pass
@@ -208,7 +208,7 @@ run_cli_tests() {
         fi
 
         # Test explicit --filter=values,patterns does NOT include entropy
-        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" --filter=values,patterns <<< "$entropy_input" 2>/dev/null) || result=""
+        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/kahl" --filter=values,patterns <<< "$entropy_input" 2>/dev/null) || result=""
         if [[ "$result" == "$entropy_input" ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/--filter=values,patterns-no-entropy"
             record_pass
@@ -218,7 +218,7 @@ run_cli_tests() {
         fi
 
         # Test -f short form (need direct invocation)
-        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" -f patterns <<< "$test_input" 2>/dev/null) || result=""
+        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/kahl" -f patterns <<< "$test_input" 2>/dev/null) || result=""
         if [[ "$result" =~ $redacted_pattern ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/-f patterns"
             record_pass
@@ -228,7 +228,7 @@ run_cli_tests() {
         fi
 
         # Test invalid filter (should error)
-        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/secrets-filter" --filter=invalid <<< "$test_input" 2>&1) || true
+        result=$(env -i "${base_env[@]}" "$ROOT_DIR/$impl/kahl" --filter=invalid <<< "$test_input" 2>&1) || true
         # Some implementations might have exit_code captured differently
         if [[ "$result" == *"no valid filters"* ]] || [[ "$result" == *"unknown filter"* ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "cli/invalid-filter-error"
@@ -263,7 +263,7 @@ run_env_tests() {
         # Test SECRETS_FILTER_VALUES=0 (should NOT redact values)
         local result
         result=$(env -i "${env_with_secrets[@]}" SECRETS_FILTER_VALUES=0 \
-            "$ROOT_DIR/$impl/secrets-filter" <<< "$test_input" 2>/dev/null) || result=""
+            "$ROOT_DIR/$impl/kahl" <<< "$test_input" 2>/dev/null) || result=""
 
         if [[ "$result" == *"$test_value"* ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/SECRETS_FILTER_VALUES=0"
@@ -276,7 +276,7 @@ run_env_tests() {
         # Test SECRETS_FILTER_PATTERNS=0 with a pattern
         local pattern_input="ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
         result=$(env -i "${base_env[@]}" SECRETS_FILTER_PATTERNS=0 \
-            "$ROOT_DIR/$impl/secrets-filter" <<< "$pattern_input" 2>/dev/null) || result=""
+            "$ROOT_DIR/$impl/kahl" <<< "$pattern_input" 2>/dev/null) || result=""
 
         if [[ "$result" == "$pattern_input" ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/SECRETS_FILTER_PATTERNS=0"
@@ -288,7 +288,7 @@ run_env_tests() {
 
         # Test CLI overrides ENV
         result=$(env -i "${base_env[@]}" SECRETS_FILTER_PATTERNS=0 \
-            "$ROOT_DIR/$impl/secrets-filter" --filter=patterns <<< "$pattern_input" 2>/dev/null) || result=""
+            "$ROOT_DIR/$impl/kahl" --filter=patterns <<< "$pattern_input" 2>/dev/null) || result=""
 
         if [[ "$result" =~ \[REDACTED:GITHUB_PAT: ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/cli-overrides-env"
@@ -301,7 +301,7 @@ run_env_tests() {
         # Test SECRETS_FILTER_ENTROPY=1 (enables entropy by default)
         local entropy_input="xK9mNpL2qR5tW8vY1zA4bC7dE0fG3hJ6"
         result=$(env -i "${base_env[@]}" SECRETS_FILTER_ENTROPY=1 \
-            "$ROOT_DIR/$impl/secrets-filter" <<< "$entropy_input" 2>/dev/null) || result=""
+            "$ROOT_DIR/$impl/kahl" <<< "$entropy_input" 2>/dev/null) || result=""
 
         if [[ "$result" =~ \[REDACTED:HIGH_ENTROPY: ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/SECRETS_FILTER_ENTROPY=1"
@@ -313,7 +313,7 @@ run_env_tests() {
 
         # Test entropy is off by default (no --filter=entropy, no env var)
         result=$(env -i "${base_env[@]}" \
-            "$ROOT_DIR/$impl/secrets-filter" <<< "$entropy_input" 2>/dev/null) || result=""
+            "$ROOT_DIR/$impl/kahl" <<< "$entropy_input" 2>/dev/null) || result=""
 
         if [[ "$result" == "$entropy_input" ]]; then
             [[ $QUIET -eq 0 ]] && print_result pass "$impl" "env/entropy-off-by-default"
@@ -416,9 +416,9 @@ run_edge_tests() {
         # Binary data with invalid UTF-8 + NUL byte (passthrough test)
         # Input: 3 invalid UTF-8 bytes + NUL + "binary\n" = 11 bytes total
         # Uses temp files because bash command substitution strips NUL bytes
-        local binary_tmp="/tmp/secrets-filter-binary-test-$$"
+        local binary_tmp="/tmp/kahl-binary-test-$$"
         printf '\x80\x81\x82\x00binary\n' > "$binary_tmp.in"
-        "$ROOT_DIR/$impl/secrets-filter" --filter=patterns < "$binary_tmp.in" > "$binary_tmp.out" 2>/dev/null
+        "$ROOT_DIR/$impl/kahl" --filter=patterns < "$binary_tmp.in" > "$binary_tmp.out" 2>/dev/null
         local result_len
         result_len=$(wc -c < "$binary_tmp.out" | tr -d ' ')
         # Should pass through unchanged (11 bytes) and contain "binary"

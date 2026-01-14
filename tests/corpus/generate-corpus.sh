@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate realistic test corpus with injected secrets
-# allow-secrets - bypass secrets-filter for test data
+# allow-secrets - bypass kahl for test data
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

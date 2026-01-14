@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared test utilities for secrets-filter test suite
+# Shared test utilities for kahl test suite
 # Source this file, don't execute it
 
 # Paths relative to tests/ directory
@@ -24,7 +24,7 @@ find_implementations() {
     local impl_filter="${1:-}"
 
     for dir in python perl go ruby rust bun swift; do
-        if [[ -x "$ROOT_DIR/$dir/secrets-filter" ]]; then
+        if [[ -x "$ROOT_DIR/$dir/kahl" ]]; then
             if [[ -z "$impl_filter" || "$dir" == "$impl_filter" ]]; then
                 impls+=("$dir")
             fi
@@ -101,7 +101,7 @@ run_impl() {
     args+=("--filter=$mode")
     args+=("$@")
 
-    run_in_env "$mode" "$ROOT_DIR/$impl/secrets-filter" "${args[@]}"
+    run_in_env "$mode" "$ROOT_DIR/$impl/kahl" "${args[@]}"
 }
 
 # Compare output with expected file

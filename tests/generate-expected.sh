@@ -16,8 +16,8 @@ echo "======================================================="
 echo
 
 # Verify Python implementation exists
-if [[ ! -x "$ROOT_DIR/python/secrets-filter" ]]; then
-    echo "ERROR: Python implementation not found at $ROOT_DIR/python/secrets-filter"
+if [[ ! -x "$ROOT_DIR/python/kahl" ]]; then
+    echo "ERROR: Python implementation not found at $ROOT_DIR/python/kahl"
     exit 1
 fi
 
@@ -48,7 +48,7 @@ generate() {
 
     # Run Python implementation
     # shellcheck disable=SC2086
-    $env_cmd "$ROOT_DIR/python/secrets-filter" $filter_arg < "$input_file" > "$output_file"
+    $env_cmd "$ROOT_DIR/python/kahl" $filter_arg < "$input_file" > "$output_file"
 
     echo "  Generated: $output_file"
 }
