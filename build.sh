@@ -15,10 +15,10 @@ echo "  Python..."
 cp "$REPO_ROOT/python/kahl-standalone" "$BUILD_DIR/kahl-python"
 chmod +x "$BUILD_DIR/kahl-python"
 
-# Perl: Copy script and patterns
+# Perl: Copy script and patterns module
 echo "  Perl..."
 cp "$REPO_ROOT/perl/main.pl" "$BUILD_DIR/kahl-perl"
-cp "$REPO_ROOT/perl/patterns_gen.pl" "$BUILD_DIR/" 2>/dev/null || true
+cp "$REPO_ROOT/perl/Patterns.pm" "$BUILD_DIR/" 2>/dev/null || true
 chmod +x "$BUILD_DIR/kahl-perl"
 
 # Go: Build binary
@@ -36,10 +36,10 @@ echo "  Rust..."
 (cd "$REPO_ROOT/rust" && cargo build --release --quiet)
 cp "$REPO_ROOT/rust/target/release/kahl" "$BUILD_DIR/kahl-rust"
 
-# Bun: Copy script and patterns
+# Bun: Copy script and patterns (TypeScript)
 echo "  Bun..."
 cp "$REPO_ROOT/bun/main.js" "$BUILD_DIR/kahl-bun"
-cp "$REPO_ROOT/bun/patterns_gen.js" "$BUILD_DIR/" 2>/dev/null || true
+cp "$REPO_ROOT/bun/patterns_gen.ts" "$BUILD_DIR/" 2>/dev/null || true
 chmod +x "$BUILD_DIR/kahl-bun"
 
 # Swift: Build binary
