@@ -197,9 +197,6 @@ build_for_platform() {
     (cd "$REPO_ROOT/swift" && swiftc -O -whole-module-optimization \
       -o "$OUT_DIR/kahl-swift-$plat-$VERSION" main.swift patterns_gen.swift version_gen.swift)
   fi
-
-  # Script languages (only once, platform-independent)
-  build_scripts_once
 }
 
 SCRIPTS_BUILT=false
@@ -317,6 +314,9 @@ if [[ "$BUILD_MODE" == "standalone" || "$BUILD_MODE" == "all" ]]; then
   echo "Building standalone artifacts..."
   echo ""
 
+  # Build script languages first (platform-independent, only once)
+  build_scripts_once
+
   for plat in $PLATFORM_LIST; do
     case "$plat" in
       darwin-arm64)
@@ -341,6 +341,20 @@ if [[ "$BUILD_MODE" == "standalone" || "$BUILD_MODE" == "all" ]]; then
     esac
     echo ""
   done
+
+  # Create symlinks for test.sh compatibility (expects build/kahl-<lang>)
+  echo "Creating test.sh compatibility symlinks..."
+  for lang in rust go swift python ruby perl bun; do
+    if should_build "$lang"; then
+      # Find the versioned artifact for this language
+      artifact=$(find "$REPO_ROOT/build/$lang/standalone" -name "kahl-$lang-*-$VERSION" -o -name "kahl-$lang-$VERSION" 2>/dev/null | head -1)
+      if [[ -n "$artifact" && -f "$artifact" ]]; then
+        ln -sf "$artifact" "$REPO_ROOT/build/kahl-$lang"
+        echo "  build/kahl-$lang -> $(basename "$artifact")"
+      fi
+    fi
+  done
+  echo ""
 fi
 
 # ============================================================================
@@ -372,8 +386,8 @@ if [[ "$GENERATE_CHECKSUMS" == "true" ]]; then
   echo "Generating checksums..."
   CHECKSUM_FILE="$REPO_ROOT/build/checksums-$VERSION.txt"
 
-  # Find all built artifacts and generate checksums
-  (cd "$REPO_ROOT/build" && find . -type f -name "kahl-*" | sort | while read -r f; do
+  # Find all built artifacts for this version and generate checksums
+  (cd "$REPO_ROOT/build" && find . -type f -name "*-$VERSION" | sort | while read -r f; do
     shasum -a 256 "$f"
   done) > "$CHECKSUM_FILE"
 
@@ -388,8 +402,8 @@ fi
 echo "Build complete. Artifacts:"
 echo ""
 
-# List all built files with sizes
-find "$REPO_ROOT/build" -type f -name "kahl-*" -exec ls -lh {} \; 2>/dev/null | while read -r line; do
+# List all built files with sizes (for this version)
+find "$REPO_ROOT/build" -type f -name "*-$VERSION" -exec ls -lh {} \; 2>/dev/null | while read -r line; do
   echo "  $line"
 done
 

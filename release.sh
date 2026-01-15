@@ -153,8 +153,8 @@ CHECKSUM_FILE="$REPO_ROOT/build/checksums-$VERSION.txt"
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "  Would generate: $CHECKSUM_FILE"
 else
-  # build-all.sh already generates checksums, but let's be explicit
-  (cd "$REPO_ROOT/build" && find . -type f -name "kahl-*" | sort | while read -r f; do
+  # build-all.sh already generates checksums, but let's be explicit (filter by version)
+  (cd "$REPO_ROOT/build" && find . -type f -name "*-$VERSION" | sort | while read -r f; do
     shasum -a 256 "$f"
   done) > "$CHECKSUM_FILE"
   echo "  Generated: $CHECKSUM_FILE"
@@ -244,7 +244,7 @@ if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "  Would run: glab release create v$VERSION --repo $PROJECT_PATH ..."
     echo "  Would attach:"
-    find "$REPO_ROOT/build" -type f \( -path "*/standalone/kahl-*" -o -name "checksums-$VERSION*" \) 2>/dev/null | sort | while read -r f; do
+    find "$REPO_ROOT/build" -type f \( -path "*/standalone/*-$VERSION" -o -name "checksums-$VERSION*" \) 2>/dev/null | sort | while read -r f; do
       echo "    - $(basename "$f")"
     done
   else
@@ -252,7 +252,7 @@ if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
     ARTIFACTS=()
     while IFS= read -r -d '' f; do
       ARTIFACTS+=("$f")
-    done < <(find "$REPO_ROOT/build" -type f \( -path "*/standalone/kahl-*" -o -name "checksums-$VERSION*" \) -print0 2>/dev/null | sort -z)
+    done < <(find "$REPO_ROOT/build" -type f \( -path "*/standalone/*-$VERSION" -o -name "checksums-$VERSION*" \) -print0 2>/dev/null | sort -z)
 
     if [[ ${#ARTIFACTS[@]} -eq 0 ]]; then
       echo "  Warning: No artifacts found in build/"
@@ -321,7 +321,7 @@ echo "Version: $VERSION"
 echo "Tag: v$VERSION"
 echo ""
 echo "Artifacts:"
-find "$REPO_ROOT/build" -type f -path "*/standalone/kahl-*" -exec ls -lh {} \; 2>/dev/null | sort | while read -r line; do
+find "$REPO_ROOT/build" -type f -path "*/standalone/*-$VERSION" -exec ls -lh {} \; 2>/dev/null | sort | while read -r line; do
   echo "  $line"
 done
 echo ""

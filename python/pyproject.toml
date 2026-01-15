@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "kahl"
 version = "0.1.0"
 description = "Stream filter for secret redaction"
-readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [{name = "Christoph Spiegel"}]
@@ -32,7 +31,7 @@ Homepage = "https://git.zib.de/cspiegel/kahl"
 Repository = "https://git.zib.de/cspiegel/kahl"
 
 [project.scripts]
-kahl = "kahl:main"
+kahl = "main:main"
 
 [tool.setuptools]
-py-modules = ["kahl"]
+py-modules = ["main", "patterns_gen"]

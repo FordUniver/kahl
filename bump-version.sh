@@ -17,9 +17,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=false
 
-# Detect sed variant ($SED on macOS via Homebrew, sed on Linux)
-if command -v $SED &>/dev/null; then
-  SED=$SED
+# Detect sed variant (gsed on macOS via Homebrew, sed on Linux)
+if command -v gsed &>/dev/null; then
+  SED=gsed
 elif sed --version 2>&1 | grep -q GNU; then
   SED=sed
 else
@@ -63,15 +63,25 @@ OLD_VERSION=$(cat "$REPO_ROOT/VERSION" | tr -d '\n')
 echo "Bumping version: $OLD_VERSION -> $NEW_VERSION"
 echo ""
 
-# Files to update with their sed patterns
-declare -A VERSION_FILES=(
-  ["VERSION"]="s/.*/$NEW_VERSION/"
-  ["rust/Cargo.toml"]="s/^version = \".*\"/version = \"$NEW_VERSION\"/"
+# Files to update with their sed patterns (parallel arrays for Bash 3.2 compat)
+VERSION_FILES=(
+  "VERSION"
+  "rust/Cargo.toml"
+)
+VERSION_PATTERNS=(
+  "s/.*/$NEW_VERSION/"
+  "s/^version = \".*\"/version = \"$NEW_VERSION\"/"
 )
 
 # Add optional files if they exist
-[[ -f "$REPO_ROOT/python/pyproject.toml" ]] && VERSION_FILES["python/pyproject.toml"]="s/^version = \".*\"/version = \"$NEW_VERSION\"/"
-[[ -f "$REPO_ROOT/bun/package.json" ]] && VERSION_FILES["bun/package.json"]="s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/"
+if [[ -f "$REPO_ROOT/python/pyproject.toml" ]]; then
+  VERSION_FILES+=("python/pyproject.toml")
+  VERSION_PATTERNS+=("s/^version = \".*\"/version = \"$NEW_VERSION\"/")
+fi
+if [[ -f "$REPO_ROOT/bun/package.json" ]]; then
+  VERSION_FILES+=("bun/package.json")
+  VERSION_PATTERNS+=("s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/")
+fi
 
 # Track modified files for rollback
 MODIFIED_FILES=()
@@ -96,9 +106,10 @@ trap 'rollback' ERR
 
 echo "Updating version files..."
 
-for file in "${!VERSION_FILES[@]}"; do
+for i in "${!VERSION_FILES[@]}"; do
+  file="${VERSION_FILES[$i]}"
   full_path="$REPO_ROOT/$file"
-  pattern="${VERSION_FILES[$file]}"
+  pattern="${VERSION_PATTERNS[$i]}"
 
   if [[ ! -f "$full_path" ]]; then
     echo "  Skipping (not found): $file"
