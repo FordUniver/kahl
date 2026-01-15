@@ -1,5 +1,5 @@
 // kahl: Filter stdin for secrets, redact with labels
-// Build: go build -ldflags="-s -w" -o kahl kahl.go patterns_gen.go
+// Build: go build -ldflags="-s -w -X main.version=$(cat VERSION)" -o kahl main.go patterns_gen.go
 package main
 
 import (
@@ -9,7 +9,6 @@ import (
 	"io"
 	gomath "math"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -17,20 +16,9 @@ import (
 	"unicode"
 )
 
-// Read version from VERSION file at startup
-var version = func() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "unknown"
-	}
-	exeDir := filepath.Dir(exePath)
-	versionPath := filepath.Join(exeDir, "..", "VERSION")
-	data, err := os.ReadFile(versionPath)
-	if err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(string(data))
-}()
+// Version is set at build time via ldflags:
+//   go build -ldflags="-X main.version=0.1.0" ...
+var version = "unknown"
 
 // Filter configuration
 type FilterConfig struct {

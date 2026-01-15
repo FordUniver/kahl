@@ -22,13 +22,8 @@
 
 import Foundation
 
-// Version from VERSION file
-let version: String = {
-    let scriptPath = CommandLine.arguments[0]
-    let scriptDir = URL(fileURLWithPath: scriptPath).deletingLastPathComponent()
-    let versionFile = scriptDir.deletingLastPathComponent().appendingPathComponent("VERSION")
-    return (try? String(contentsOf: versionFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "unknown"
-}()
+// Version is set at build time via generated version_gen.swift
+// See build.sh for generation: echo "let version = \"$(cat VERSION)\"" > swift/version_gen.swift
 
 // MARK: - NSRegularExpression Helpers
 

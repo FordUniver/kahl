@@ -377,6 +377,306 @@ HEADER
     return $output;
 }
 
+my $main_script = "$script_dir/main.pl";
+my $standalone_output = "$script_dir/kahl-standalone";
+my $version_file = "$repo_root/VERSION";
+
+# Generate inline patterns (without package wrapper)
+sub generate_inline_patterns {
+    # Read YAML files
+    open my $pf, '<', $patterns_file or die "Cannot read $patterns_file: $!\n";
+    local $/;
+    my $patterns_content = <$pf>;
+    close $pf;
+
+    open my $ef, '<', $env_file or die "Cannot read $env_file: $!\n";
+    my $env_content = <$ef>;
+    close $ef;
+
+    my $entropy_content = '';
+    if (-f $entropy_file) {
+        open my $ef2, '<', $entropy_file or die "Cannot read $entropy_file: $!\n";
+        $entropy_content = <$ef2>;
+        close $ef2;
+    }
+
+    # Parse with yq (same as generate_module but output as plain vars, not our)
+    my $long_threshold = yq('.constants.long_threshold', $patterns_file);
+    my $max_pk_buffer = yq('.constants.max_private_key_buffer', $patterns_file);
+
+    my @lines;
+    push @lines, "# Constants";
+    push @lines, "my \$LONG_THRESHOLD = $long_threshold;";
+    push @lines, "my \$MAX_PRIVATE_KEY_BUFFER = $max_pk_buffer;";
+    push @lines, "";
+
+    # Private key markers
+    my $pk_begin = yq('.private_key.begin', $patterns_file);
+    my $pk_end = yq('.private_key.end', $patterns_file);
+    push @lines, "# Private key markers";
+    push @lines, "my \$PRIVATE_KEY_BEGIN = qr/$pk_begin/;";
+    push @lines, "my \$PRIVATE_KEY_END = qr/$pk_end/;";
+    push @lines, "";
+
+    # Patterns array
+    my $pattern_count = yq('.patterns | length', $patterns_file);
+    push @lines, "# Direct patterns: [regex, label]";
+    push @lines, "my \@PATTERNS = (";
+    for my $i (0 .. $pattern_count - 1) {
+        my $pattern = yq(".patterns[$i].pattern", $patterns_file);
+        my $label = yq(".patterns[$i].label", $patterns_file);
+        my $multiline = yq(".patterns[$i].multiline // false", $patterns_file);
+        next if $multiline eq 'true';
+        my $pattern_escaped = escape_regex_delim($pattern);
+        push @lines, "    [qr/$pattern_escaped/, '$label'],";
+    }
+    push @lines, ");";
+    push @lines, "";
+
+    # Context patterns
+    my $ctx_count = yq('.context_patterns | length', $patterns_file);
+    push @lines, "# Context patterns: [regex with lookbehind, label]";
+    push @lines, "my \@CONTEXT_PATTERNS = (";
+    for my $i (0 .. $ctx_count - 1) {
+        my $prefix = yq(".context_patterns[$i].prefix", $patterns_file);
+        my $value = yq(".context_patterns[$i].value", $patterns_file);
+        my $label = yq(".context_patterns[$i].label", $patterns_file);
+        my $prefix_escaped = escape_regex_delim($prefix);
+        my $value_escaped = escape_regex_delim($value);
+        push @lines, "    [qr/(?<=$prefix_escaped)$value_escaped/, '$label'],";
+    }
+    push @lines, ");";
+    push @lines, "";
+
+    # Special patterns
+    my @keys = yq_array('.special_patterns | keys | .[]', $patterns_file);
+    push @lines, "# Special patterns with capture groups";
+    push @lines, "my \%SPECIAL_PATTERNS = (";
+    for my $key (@keys) {
+        my $pattern = yq(".special_patterns.$key.pattern", $patterns_file);
+        my $label = yq(".special_patterns.$key.label", $patterns_file);
+        my $secret_group = yq(".special_patterns.$key.secret_group", $patterns_file);
+        my $pattern_escaped = escape_regex_delim($pattern);
+        push @lines, "    $key => {";
+        push @lines, "        pattern => qr/$pattern_escaped/,";
+        push @lines, "        label => '$label',";
+        push @lines, "        secret_group => $secret_group,";
+        push @lines, "    },";
+    }
+    push @lines, ");";
+    push @lines, "";
+
+    # Explicit env vars
+    my @explicit = yq_array('.explicit[]', $env_file);
+    push @lines, "# Explicit environment variable names";
+    push @lines, "my \@EXPLICIT_ENV_VARS = qw(";
+    push @lines, "    " . join(' ', @explicit);
+    push @lines, ");";
+    push @lines, "";
+
+    # Env suffixes
+    my @suffixes = yq_array('.suffixes[]', $env_file);
+    push @lines, "# Environment variable suffixes";
+    push @lines, "my \@ENV_SUFFIXES = qw(";
+    push @lines, "    " . join(' ', @suffixes);
+    push @lines, ");";
+    push @lines, "";
+
+    # Entropy config
+    if (-f $entropy_file) {
+        my $enabled = yq('.enabled_by_default // false', $entropy_file);
+        $enabled = ($enabled eq 'true') ? 1 : 0;
+        push @lines, "# Entropy detection configuration";
+        push @lines, "my \$ENTROPY_ENABLED_DEFAULT = $enabled;";
+        push @lines, "";
+
+        my $hex_t = yq('.thresholds.hex // 3.0', $entropy_file);
+        my $base64_t = yq('.thresholds.base64 // 4.5', $entropy_file);
+        my $alnum_t = yq('.thresholds.alphanumeric // 4.5', $entropy_file);
+        push @lines, "my \%ENTROPY_THRESHOLDS = (";
+        push @lines, "    hex => $hex_t,";
+        push @lines, "    base64 => $base64_t,";
+        push @lines, "    alphanumeric => $alnum_t,";
+        push @lines, ");";
+        push @lines, "";
+
+        my $min_len = yq('.token_length.min // 16', $entropy_file);
+        my $max_len = yq('.token_length.max // 256', $entropy_file);
+        push @lines, "my \$ENTROPY_MIN_LENGTH = $min_len;";
+        push @lines, "my \$ENTROPY_MAX_LENGTH = $max_len;";
+        push @lines, "";
+
+        # Exclusions
+        my $excl_count = yq('.exclusions | length', $entropy_file);
+        push @lines, "my \@ENTROPY_EXCLUSIONS = (";
+        for my $i (0 .. $excl_count - 1) {
+            my $pattern = yq(".exclusions[$i].pattern", $entropy_file);
+            my $label = yq(".exclusions[$i].label", $entropy_file);
+            my $case_i = yq(".exclusions[$i].case_insensitive // false", $entropy_file);
+            $case_i = ($case_i eq 'true') ? 'i' : '';
+            my $kw_check = yq(".exclusions[$i].context_keywords // null", $entropy_file);
+            my $kw_str;
+            if ($kw_check ne 'null') {
+                my @kw = yq_array(".exclusions[$i].context_keywords[]", $entropy_file);
+                $kw_str = "[qw(" . join(' ', @kw) . ")]";
+            } else {
+                $kw_str = "undef";
+            }
+            my $pattern_escaped = escape_regex_delim($pattern);
+            push @lines, "    {";
+            push @lines, "        pattern => qr/$pattern_escaped/$case_i,";
+            push @lines, "        label => '$label',";
+            push @lines, "        case_insensitive => " . ($case_i ? 1 : 0) . ",";
+            push @lines, "        context_keywords => $kw_str,";
+            push @lines, "    },";
+        }
+        push @lines, ");";
+        push @lines, "";
+
+        # Context keywords
+        my @ctx_kw = yq_array('.context_keywords[]', $entropy_file);
+        push @lines, "my \%ENTROPY_CONTEXT_KEYWORDS = map { \$_ => 1 } qw(";
+        push @lines, "    " . join(' ', @ctx_kw);
+        push @lines, ");";
+    } else {
+        push @lines, "# Entropy detection (disabled)";
+        push @lines, "my \$ENTROPY_ENABLED_DEFAULT = 0;";
+        push @lines, "my \%ENTROPY_THRESHOLDS = (hex => 3.0, base64 => 4.5, alphanumeric => 4.5);";
+        push @lines, "my \$ENTROPY_MIN_LENGTH = 16;";
+        push @lines, "my \$ENTROPY_MAX_LENGTH = 256;";
+        push @lines, "my \@ENTROPY_EXCLUSIONS = ();";
+        push @lines, "my \%ENTROPY_CONTEXT_KEYWORDS = ();";
+    }
+
+    return join("\n", @lines);
+}
+
+# Extract filter logic from main.pl
+sub extract_filter_logic {
+    open my $fh, '<', $main_script or die "Cannot read $main_script: $!\n";
+    my @lines = <$fh>;
+    close $fh;
+
+    # Find start after the Patterns import block (look for VALID_FILTERS)
+    my $start_idx;
+    for my $i (0 .. $#lines) {
+        if ($lines[$i] =~ /^my %VALID_FILTERS/) {
+            $start_idx = $i;
+            last;
+        }
+    }
+    die "Could not find VALID_FILTERS in main.pl" unless defined $start_idx;
+
+    # Extract and clean up
+    my @filter_lines = @lines[$start_idx .. $#lines];
+
+    # Skip subroutine blocks that are already defined in header
+    my @clean_lines;
+    my $in_skip_sub = 0;
+    for my $line (@filter_lines) {
+        # Start of subroutine we want to skip
+        if ($line =~ /^sub (is_env_falsy|is_env_enabled)\b/) {
+            $in_skip_sub = 1;
+            next;
+        }
+        # End of subroutine (closing brace at start of line)
+        if ($in_skip_sub && $line =~ /^\}/) {
+            $in_skip_sub = 0;
+            next;
+        }
+        next if $in_skip_sub;
+
+        # Skip lines using package constants that we've redefined as my vars
+        next if $line =~ /^\s*\$LONG_THRESHOLD\s*=/;
+        next if $line =~ /^\s*\$MAX_PRIVATE_KEY_BUFFER\s*=/;
+        next if $line =~ /^\s*\$PRIVATE_KEY_BEGIN\s*=/;
+        next if $line =~ /^\s*\$PRIVATE_KEY_END\s*=/;
+        push @clean_lines, $line;
+    }
+
+    return join('', @clean_lines);
+}
+
+# Generate standalone kahl script
+sub generate_standalone {
+    my $source_hash = compute_source_hash($patterns_file, $env_file);
+    $source_hash .= '_' . compute_source_hash($entropy_file) if -f $entropy_file;
+    my $timestamp = strftime('%Y-%m-%d %H:%M:%S UTC', gmtime);
+
+    # Read VERSION
+    my $version = 'unknown';
+    if (-f $version_file) {
+        open my $vf, '<', $version_file or warn "Cannot read VERSION: $!\n";
+        if ($vf) {
+            $version = <$vf>;
+            chomp $version;
+            close $vf;
+        }
+    }
+
+    my $pattern_data = generate_inline_patterns();
+    my $filter_logic = extract_filter_logic();
+
+    my $header = <<"HEADER";
+#!/usr/bin/env perl
+# Standalone kahl with patterns baked in
+#
+# Generated by generate.pl - DO NOT EDIT
+# Generated: $timestamp
+# Source hash: $source_hash
+#
+# To regenerate: perl perl/generate.pl
+
+use strict;
+use warnings;
+use utf8;
+use Getopt::Long qw(:config no_ignore_case bundling);
+
+# Use raw bytes for I/O
+binmode(STDIN,  ':raw');
+binmode(STDOUT, ':raw');
+binmode(STDERR, ':encoding(UTF-8)');
+
+# Version
+our \$VERSION = '$version';
+
+# Auto-flush stdout
+\$| = 1;
+
+# Check if env value is falsy (0, false, no)
+sub is_env_falsy {
+    my (\$val) = \@_;
+    return 0 unless defined \$val;
+    return lc(\$val) =~ /^(0|false|no)\$/;
+}
+
+# Check if env value is truthy (1, true, yes)
+sub is_env_enabled {
+    my (\$val) = \@_;
+    return 0 unless defined \$val;
+    return lc(\$val) =~ /^(1|true|yes)\$/;
+}
+
+HEADER
+
+    my $output = join("\n",
+        $header,
+        '# ' . '=' x 76,
+        '# Pattern Data (generated from YAML)',
+        '# ' . '=' x 76,
+        '',
+        $pattern_data,
+        '',
+        '# ' . '=' x 76,
+        '# Filter Logic',
+        '# ' . '=' x 76,
+        '',
+        $filter_logic,
+    );
+
+    return $output;
+}
+
 # Main
 sub main {
     my $content = generate_module();
@@ -386,6 +686,15 @@ sub main {
     close $fh;
 
     print "Generated: $output_file\n";
+
+    # Generate standalone script
+    my $standalone_content = generate_standalone();
+    open my $sf, '>', $standalone_output or die "Cannot write $standalone_output: $!\n";
+    print $sf $standalone_content;
+    close $sf;
+    chmod 0755, $standalone_output;
+
+    print "Generated: $standalone_output\n";
 }
 
 main();

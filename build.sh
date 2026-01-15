@@ -5,6 +5,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$REPO_ROOT/build"
+VERSION=$(cat "$REPO_ROOT/VERSION")
 
 echo "Building kahl implementations..."
 mkdir -p "$BUILD_DIR"
@@ -24,9 +25,9 @@ cp "$REPO_ROOT/perl/main.pl" "$BUILD_DIR/kahl-perl"
 cp "$REPO_ROOT/perl/Patterns.pm" "$BUILD_DIR/" 2>/dev/null || true
 chmod +x "$BUILD_DIR/kahl-perl"
 
-# Go: Build binary
+# Go: Build binary with version embedded
 echo "  Go..."
-(cd "$REPO_ROOT/go" && go build -ldflags="-s -w" -o "$BUILD_DIR/kahl-go" main.go patterns_gen.go)
+(cd "$REPO_ROOT/go" && go build -ldflags="-s -w -X main.version=$VERSION" -o "$BUILD_DIR/kahl-go" main.go patterns_gen.go)
 
 # Ruby: Copy script and patterns
 echo "  Ruby..."
@@ -45,9 +46,10 @@ cp "$REPO_ROOT/bun/main.js" "$BUILD_DIR/kahl-bun"
 cp "$REPO_ROOT/bun/patterns_gen.ts" "$BUILD_DIR/" 2>/dev/null || true
 chmod +x "$BUILD_DIR/kahl-bun"
 
-# Swift: Build binary
+# Swift: Generate version file and build binary
 echo "  Swift..."
-(cd "$REPO_ROOT/swift" && swiftc -O -whole-module-optimization -o "$BUILD_DIR/kahl-swift" main.swift patterns_gen.swift)
+echo "let version = \"$VERSION\"" > "$REPO_ROOT/swift/version_gen.swift"
+(cd "$REPO_ROOT/swift" && swiftc -O -whole-module-optimization -o "$BUILD_DIR/kahl-swift" main.swift patterns_gen.swift version_gen.swift)
 
 echo ""
 echo "Build complete. Artifacts in $BUILD_DIR:"

@@ -12,6 +12,18 @@ python/*.pyc
 python/kahl-standalone
 python/patterns_gen.py
 
+# Swift generated files
+swift/version_gen.swift
+
+# Ruby generated files
+ruby/kahl-standalone
+
+# Perl generated files
+perl/kahl-standalone
+
+# Bun generated files
+bun/kahl-standalone
+
 # Language-specific build directories
 rust/target/
 go/go.mod

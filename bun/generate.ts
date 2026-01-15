@@ -279,12 +279,262 @@ async function generate(): Promise<string> {
   return lines.join("\n");
 }
 
+const MAIN_SCRIPT = join(SCRIPT_DIR, "main.js");
+const STANDALONE_OUTPUT = join(SCRIPT_DIR, "kahl-standalone");
+const VERSION_FILE = join(REPO_ROOT, "VERSION");
+
+// Generate inline patterns as JavaScript (no TypeScript, no exports)
+async function generateInlinePatterns(): Promise<string> {
+  const patterns = await parseYaml<PatternsYaml>(PATTERNS_YAML);
+  const env = await parseYaml<EnvYaml>(ENV_YAML);
+
+  let entropy: EntropyYaml | null = null;
+  if (entropyYamlExists()) {
+    entropy = await parseYaml<EntropyYaml>(ENTROPY_YAML);
+  }
+
+  const lines: string[] = [];
+
+  // Constants
+  lines.push(`const LONG_THRESHOLD = ${patterns.constants.long_threshold};`);
+  lines.push(`const MAX_PRIVATE_KEY_BUFFER = ${patterns.constants.max_private_key_buffer};`);
+  lines.push("");
+
+  // Private key markers
+  lines.push(`const PRIVATE_KEY_BEGIN = /${escapeRegexLiteral(patterns.private_key.begin)}/;`);
+  lines.push(`const PRIVATE_KEY_END = /${escapeRegexLiteral(patterns.private_key.end)}/;`);
+  lines.push("");
+
+  // Direct patterns
+  lines.push("const PATTERNS = [");
+  for (const p of patterns.patterns) {
+    if (p.multiline) continue;
+    lines.push(`  [/${escapeRegexLiteral(p.pattern)}/g, '${p.label}'],`);
+  }
+  lines.push("];");
+  lines.push("");
+
+  // Context patterns
+  lines.push("const CONTEXT_PATTERNS = [");
+  for (const cp of patterns.context_patterns) {
+    const escapedPrefix = escapeRegexLiteral(escapeString(cp.prefix));
+    const escapedValue = escapeRegexLiteral(cp.value);
+    lines.push(`  [/(?<=${escapedPrefix})${escapedValue}/g, '${cp.label}'],`);
+  }
+  lines.push("];");
+  lines.push("");
+
+  // Special patterns
+  lines.push("const SPECIAL_PATTERNS = {");
+  for (const [name, sp] of Object.entries(patterns.special_patterns)) {
+    lines.push(`  ${name}: {`);
+    lines.push(`    pattern: /${escapeRegexLiteral(sp.pattern)}/g,`);
+    lines.push(`    label: '${sp.label}',`);
+    lines.push(`    secretGroup: ${sp.secret_group},`);
+    lines.push("  },");
+  }
+  lines.push("};");
+  lines.push("");
+
+  // Environment variables
+  lines.push("const EXPLICIT_ENV_VARS = new Set([");
+  for (const v of env.explicit) {
+    lines.push(`  '${v}',`);
+  }
+  lines.push("]);");
+  lines.push("");
+
+  lines.push("const ENV_SUFFIXES = [");
+  for (const s of env.suffixes) {
+    lines.push(`  '${s}',`);
+  }
+  lines.push("];");
+  lines.push("");
+
+  // Entropy config
+  if (entropy) {
+    lines.push(`const ENTROPY_ENABLED_DEFAULT = ${entropy.enabled_by_default};`);
+    lines.push("const ENTROPY_THRESHOLDS = {");
+    lines.push(`  hex: ${entropy.thresholds.hex},`);
+    lines.push(`  base64: ${entropy.thresholds.base64},`);
+    lines.push(`  alphanumeric: ${entropy.thresholds.alphanumeric},`);
+    lines.push("};");
+    lines.push(`const ENTROPY_MIN_LENGTH = ${entropy.token_length.min};`);
+    lines.push(`const ENTROPY_MAX_LENGTH = ${entropy.token_length.max};`);
+    lines.push("");
+
+    lines.push("const ENTROPY_EXCLUSIONS = [");
+    for (const excl of entropy.exclusions) {
+      const kw = excl.context_keywords ? JSON.stringify(excl.context_keywords) : "null";
+      lines.push("  {");
+      lines.push(`    pattern: '${escapeString(excl.pattern)}',`);
+      lines.push(`    label: '${excl.label}',`);
+      lines.push(`    caseInsensitive: ${excl.case_insensitive ?? false},`);
+      lines.push(`    contextKeywords: ${kw},`);
+      lines.push("  },");
+    }
+    lines.push("];");
+    lines.push("");
+
+    lines.push("const ENTROPY_CONTEXT_KEYWORDS = new Set([");
+    for (const kw of entropy.context_keywords) {
+      lines.push(`  '${kw}',`);
+    }
+    lines.push("]);");
+  } else {
+    lines.push("const ENTROPY_ENABLED_DEFAULT = false;");
+    lines.push("const ENTROPY_THRESHOLDS = { hex: 3.0, base64: 4.5, alphanumeric: 4.5 };");
+    lines.push("const ENTROPY_MIN_LENGTH = 16;");
+    lines.push("const ENTROPY_MAX_LENGTH = 256;");
+    lines.push("const ENTROPY_EXCLUSIONS = [];");
+    lines.push("const ENTROPY_CONTEXT_KEYWORDS = new Set();");
+  }
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+// Extract filter logic from main.js, removing imports and type annotations
+function extractFilterLogic(): string {
+  const content = readFileSync(MAIN_SCRIPT, 'utf-8');
+  const lines = content.split('\n');
+
+  // Find where filter logic starts (after pattern imports)
+  let startIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('const STATE_NORMAL')) {
+      startIdx = i;
+      break;
+    }
+  }
+
+  if (startIdx === -1) {
+    throw new Error("Could not find STATE_NORMAL in main.js");
+  }
+
+  // Extract and clean
+  const filterLines = lines.slice(startIdx);
+
+  // First pass: skip interface/type blocks and imports
+  const filteredLines: string[] = [];
+  let inInterfaceBlock = false;
+  let braceCount = 0;
+
+  for (const line of filterLines) {
+    // Skip import statements
+    if (line.startsWith('import ') || line.includes('import type')) continue;
+
+    // Track interface/type blocks
+    if (line.trim().startsWith('interface ') || line.trim().startsWith('type ')) {
+      inInterfaceBlock = true;
+      braceCount = 0;
+    }
+
+    if (inInterfaceBlock) {
+      // Count braces to find end of block
+      for (const c of line) {
+        if (c === '{') braceCount++;
+        if (c === '}') braceCount--;
+      }
+      if (braceCount <= 0 && line.includes('}')) {
+        inInterfaceBlock = false;
+      }
+      continue; // Skip this line
+    }
+
+    filteredLines.push(line);
+  }
+
+  // Second pass: remove type annotations
+  const cleanLines = filteredLines.map(line => {
+    let cleaned = line;
+
+    // Function return type on a line ending with { (may contain nested braces in generic)
+    // ): Promise<{ ... }> {  ->  ) {
+    if (cleaned.includes('): ') && cleaned.trimEnd().endsWith('{')) {
+      const colonIdx = cleaned.indexOf('): ');
+      if (colonIdx !== -1) {
+        cleaned = cleaned.substring(0, colonIdx + 1) + ' {';
+      }
+    }
+
+    // Variable declarations with complex types including generics
+    // let x: Map<string, number> = -> let x =
+    cleaned = cleaned.replace(/(\b(?:let|const|var)\s+\w+):\s*[^=]+=/g, '$1 =');
+
+    // Function parameters with types (handle generics by matching balanced <>)
+    // Repeatedly apply until no more matches
+    let prev = '';
+    while (prev !== cleaned) {
+      prev = cleaned;
+      // Match param: Type where Type can include <...>
+      // Handle Map<string, string>, Set<Type>, ReturnType<...>, etc.
+      cleaned = cleaned.replace(/(\(\s*\w+):\s*\w+(?:<[^>]*>)?(\s*[,)])/g, '$1$2');
+      cleaned = cleaned.replace(/(,\s*\w+):\s*\w+(?:<[^>]*>)?(?:\s*\|\s*\w+)?(\s*[,)])/g, '$1$2');
+    }
+
+    // Type assertions: as Type
+    cleaned = cleaned.replace(/\s+as\s+\w+(\[\])?/g, '');
+
+    return cleaned;
+  });
+
+  return cleanLines.join('\n');
+}
+
+// Generate standalone script
+async function generateStandalone(): Promise<string> {
+  const sourceHash = computeSourceHash();
+  const timestamp = new Date().toISOString();
+
+  let version = 'unknown';
+  try {
+    version = readFileSync(VERSION_FILE, 'utf-8').trim();
+  } catch {}
+
+  const patternData = await generateInlinePatterns();
+  const filterLogic = extractFilterLogic();
+
+  const header = `#!/usr/bin/env bun
+// Standalone kahl with patterns baked in
+//
+// Generated by generate.ts - DO NOT EDIT
+// Generated: ${timestamp}
+// Source hash: ${sourceHash}
+//
+// To regenerate: bun run bun/generate.ts
+
+// Version
+const VERSION = '${version}';
+
+`;
+
+  return [
+    header,
+    '// ' + '='.repeat(76),
+    '// Pattern Data (generated from YAML)',
+    '// ' + '='.repeat(76),
+    '',
+    patternData,
+    '',
+    '// ' + '='.repeat(76),
+    '// Filter Logic',
+    '// ' + '='.repeat(76),
+    '',
+    filterLogic,
+  ].join('\n');
+}
+
 // Main
 async function main() {
   try {
     const source = await generate();
     writeFileSync(OUTPUT_FILE, source);
     console.log(`Generated ${OUTPUT_FILE}`);
+
+    const standalone = await generateStandalone();
+    writeFileSync(STANDALONE_OUTPUT, standalone, { mode: 0o755 });
+    console.log(`Generated ${STANDALONE_OUTPUT}`);
   } catch (err) {
     console.error("Error generating patterns:", err);
     process.exit(1);
