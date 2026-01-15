@@ -187,8 +187,11 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo "  Would run: gpg --armor --detach-sign $CHECKSUM_FILE"
 else
   if command -v gpg &>/dev/null; then
-    gpg --armor --detach-sign "$CHECKSUM_FILE"
-    echo "  Created: $CHECKSUM_FILE.asc"
+    if gpg --armor --detach-sign "$CHECKSUM_FILE" 2>/dev/null; then
+      echo "  Created: $CHECKSUM_FILE.asc"
+    else
+      echo "  Warning: GPG signing failed (no secret key?), skipping signature"
+    fi
   else
     echo "  Warning: gpg not found, skipping signature"
   fi
@@ -208,12 +211,13 @@ else
   if git -C "$REPO_ROOT" tag | grep -q "^v$VERSION$"; then
     echo "  Tag v$VERSION already exists, skipping"
   else
-    if command -v gpg &>/dev/null; then
+    if command -v gpg &>/dev/null && gpg --list-secret-keys &>/dev/null; then
       git -C "$REPO_ROOT" tag -s "v$VERSION" -m "Release v$VERSION"
+      echo "  Created signed tag: v$VERSION"
     else
       git -C "$REPO_ROOT" tag -a "v$VERSION" -m "Release v$VERSION"
+      echo "  Created annotated tag: v$VERSION (no GPG key for signing)"
     fi
-    echo "  Created tag: v$VERSION"
   fi
 fi
 
