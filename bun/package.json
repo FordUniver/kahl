@@ -1,0 +1,31 @@
+{
+  "name": "kahl",
+  "version": "0.1.0",
+  "description": "Stream filter for secret redaction",
+  "bin": {
+    "kahl": "./main.js"
+  },
+  "main": "./main.js",
+  "type": "module",
+  "keywords": [
+    "security",
+    "secrets",
+    "filter",
+    "redaction",
+    "cli"
+  ],
+  "author": "Christoph Spiegel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://git.zib.de/cspiegel/kahl"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "files": [
+    "main.js",
+    "patterns_gen.ts"
+  ]
+}

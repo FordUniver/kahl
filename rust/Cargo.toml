@@ -2,6 +2,12 @@
 name = "kahl"
 version = "0.1.0"
 edition = "2021"
+description = "Stream filter for secret redaction"
+repository = "https://git.zib.de/cspiegel/kahl"
+license = "MIT"
+keywords = ["security", "secrets", "filter", "redaction", "cli"]
+categories = ["command-line-utilities"]
+authors = ["Christoph Spiegel"]
 
 [dependencies]
 regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-perl"] }
