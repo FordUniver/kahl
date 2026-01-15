@@ -278,7 +278,7 @@ if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
     else
       echo "  Uploading ${#ARTIFACTS[@]} artifacts..."
       glab release create "v$VERSION" \
-        --title "v$VERSION" \
+        --name "v$VERSION" \
         --notes "Release v$VERSION" \
         --repo "$PROJECT_PATH" \
         "${ARTIFACTS[@]}"
