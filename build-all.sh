@@ -346,8 +346,18 @@ if [[ "$BUILD_MODE" == "standalone" || "$BUILD_MODE" == "all" ]]; then
   echo "Creating test.sh compatibility symlinks..."
   for lang in rust go swift python ruby perl bun; do
     if should_build "$lang"; then
-      # Find the versioned artifact for this language
-      artifact=$(find "$REPO_ROOT/build/$lang/standalone" -name "kahl-$lang-*-$VERSION" -o -name "kahl-$lang-$VERSION" 2>/dev/null | head -1)
+      # Prefer native platform artifact, fallback to any platform
+      artifact=""
+      # Try native platform first (compiled languages)
+      if [[ -f "$REPO_ROOT/build/$lang/standalone/kahl-$lang-$PLATFORM-$VERSION" ]]; then
+        artifact="$REPO_ROOT/build/$lang/standalone/kahl-$lang-$PLATFORM-$VERSION"
+      # Try platform-independent (script languages)
+      elif [[ -f "$REPO_ROOT/build/$lang/standalone/kahl-$lang-$VERSION" ]]; then
+        artifact="$REPO_ROOT/build/$lang/standalone/kahl-$lang-$VERSION"
+      # Fallback to any available
+      else
+        artifact=$(find "$REPO_ROOT/build/$lang/standalone" -name "kahl-$lang-*-$VERSION" 2>/dev/null | head -1)
+      fi
       if [[ -n "$artifact" && -f "$artifact" ]]; then
         ln -sf "$artifact" "$REPO_ROOT/build/kahl-$lang"
         echo "  build/kahl-$lang -> $(basename "$artifact")"

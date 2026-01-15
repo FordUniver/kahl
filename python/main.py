@@ -37,8 +37,11 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# Version from VERSION file
-__version__ = (Path(__file__).parent.parent / "VERSION").read_text().strip()
+# Version from VERSION file (fallback for pip installs where VERSION doesn't exist)
+try:
+    __version__ = (Path(__file__).parent.parent / "VERSION").read_text().strip()
+except FileNotFoundError:
+    __version__ = "unknown"
 
 # Ensure patterns_gen.py exists before importing
 # Uses mtime comparison to avoid subprocess overhead on every invocation

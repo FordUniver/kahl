@@ -86,6 +86,16 @@ fi
 # Track modified files for rollback
 MODIFIED_FILES=()
 
+# Pattern files that may be regenerated during build (restore timestamps on rollback)
+PATTERN_FILES=(
+  "go/patterns_gen.go"
+  "rust/src/patterns_gen.rs"
+  "swift/patterns_gen.swift"
+  "ruby/patterns_gen.rb"
+  "perl/Patterns.pm"
+  "bun/patterns_gen.ts"
+)
+
 rollback() {
   echo ""
   echo "Rolling back changes..."
@@ -93,6 +103,11 @@ rollback() {
     git -C "$REPO_ROOT" checkout -- "$file" 2>/dev/null || true
     echo "  Restored: $file"
   done
+  # Also restore pattern files (may have new timestamps from build)
+  for file in "${PATTERN_FILES[@]}"; do
+    git -C "$REPO_ROOT" checkout -- "$file" 2>/dev/null || true
+  done
+  echo "  Restored: pattern files"
   echo ""
   echo "Version bump failed. All changes have been rolled back."
   exit 1
