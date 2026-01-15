@@ -14,8 +14,8 @@ func shell(_ command: String, trimWhitespace: Bool = true) -> (output: String, s
     task.standardOutput = pipe
     task.standardError = FileHandle.nullDevice
     task.arguments = ["-c", command]
-    task.launchPath = "/bin/bash"
-    task.launch()
+    task.executableURL = URL(fileURLWithPath: "/bin/bash")
+    try! task.run()
 
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     var output = String(data: data, encoding: .utf8) ?? ""
