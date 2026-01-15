@@ -27,7 +27,7 @@ variables:
   stage: test
   before_script:
     - *install_test_deps
-    - mkdir -p build
+    - mkdir -p build tests
   script:
     - ./test.sh
   artifacts:
@@ -122,7 +122,8 @@ test:swift:
   before_script:
     - apt-get update && apt-get install -y wget
     - *install_test_deps
-    - mkdir -p build
+    - mkdir -p build tests
+    - echo "let version = \"$(cat VERSION)\"" > swift/version_gen.swift
     - (cd swift && swiftc -O -whole-module-optimization -o ../build/kahl-swift main.swift patterns_gen.swift version_gen.swift)
 
 # Benchmark job - runs only for passing implementations
