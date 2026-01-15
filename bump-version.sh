@@ -17,6 +17,16 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=false
 
+# Detect sed variant ($SED on macOS via Homebrew, sed on Linux)
+if command -v $SED &>/dev/null; then
+  SED=$SED
+elif sed --version 2>&1 | grep -q GNU; then
+  SED=sed
+else
+  echo "Error: GNU sed required (install via 'brew install gnu-sed' on macOS)" >&2
+  exit 1
+fi
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -97,9 +107,9 @@ for file in "${!VERSION_FILES[@]}"; do
 
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "  Would update: $file"
-    gsed -n "$pattern p" "$full_path" 2>/dev/null || true
+    $SED -n "$pattern p" "$full_path" 2>/dev/null || true
   else
-    gsed -i "$pattern" "$full_path"
+    $SED -i "$pattern" "$full_path"
     MODIFIED_FILES+=("$file")
     echo "  Updated: $file"
   fi

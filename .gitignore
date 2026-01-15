@@ -12,9 +12,6 @@ python/*.pyc
 python/kahl-standalone
 python/patterns_gen.py
 
-# Swift generated files
-swift/version_gen.swift
-
 # Ruby generated files
 ruby/kahl-standalone
 

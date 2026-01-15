@@ -40,14 +40,17 @@ GENERATE_CHECKSUMS=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode)
+      [[ $# -lt 2 || "$2" == --* ]] && { echo "Error: --mode requires a value" >&2; exit 1; }
       BUILD_MODE="$2"
       shift 2
       ;;
     --lang|--languages)
+      [[ $# -lt 2 || "$2" == --* ]] && { echo "Error: --lang requires a value" >&2; exit 1; }
       LANGUAGES="$2"
       shift 2
       ;;
     --platform|--platforms)
+      [[ $# -lt 2 || "$2" == --* ]] && { echo "Error: --platform requires a value" >&2; exit 1; }
       PLATFORMS="$2"
       shift 2
       ;;
@@ -66,8 +69,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Convert comma-separated languages to array
+# Convert comma-separated languages to array (trim spaces)
 IFS=',' read -ra LANG_ARRAY <<< "$LANGUAGES"
+LANG_ARRAY=("${LANG_ARRAY[@]// /}")
 
 should_build() {
   local lang="$1"
@@ -295,7 +299,7 @@ fi
 
 if should_build "rust"; then
   echo "  Rust..."
-  (cd "$REPO_ROOT/rust" && cargo build --release --quiet 2>/dev/null || true)  # triggers build.rs
+  (cd "$REPO_ROOT/rust" && ./generate.sh)
 fi
 
 if should_build "swift"; then

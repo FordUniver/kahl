@@ -231,8 +231,18 @@ echo ""
 if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
   echo "Step 7: Creating GitLab release..."
 
+  # Extract project path from remote URL (strip .git suffix if present)
+  REMOTE_URL=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")
+  if [[ "$REMOTE_URL" =~ git\.zib\.de[:/](.+)$ ]]; then
+    PROJECT_PATH="${BASH_REMATCH[1]%.git}"
+  else
+    echo "  Error: Could not parse GitLab project path from remote URL" >&2
+    echo "  Remote URL: $REMOTE_URL" >&2
+    exit 1
+  fi
+
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "  Would run: glab release create v$VERSION --title 'v$VERSION' ..."
+    echo "  Would run: glab release create v$VERSION --repo $PROJECT_PATH ..."
     echo "  Would attach:"
     find "$REPO_ROOT/build" -type f \( -path "*/standalone/kahl-*" -o -name "checksums-$VERSION*" \) 2>/dev/null | sort | while read -r f; do
       echo "    - $(basename "$f")"
@@ -251,7 +261,7 @@ if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
       glab release create "v$VERSION" \
         --title "v$VERSION" \
         --notes "Release v$VERSION" \
-        --repo "$(git -C "$REPO_ROOT" remote get-url origin)" \
+        --repo "$PROJECT_PATH" \
         "${ARTIFACTS[@]}"
       echo "  Created release: v$VERSION"
     fi
@@ -319,13 +329,8 @@ echo "Checksums: $CHECKSUM_FILE"
 [[ -f "$CHECKSUM_FILE.asc" ]] && echo "Signature: $CHECKSUM_FILE.asc"
 echo ""
 
-if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
-  # Extract project path from remote URL (strip .git suffix if present)
-  REMOTE_URL=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")
-  if [[ "$REMOTE_URL" =~ git\.zib\.de[:/](.+)$ ]]; then
-    PROJECT_PATH="${BASH_REMATCH[1]%.git}"
-    echo "GitLab Release: https://git.zib.de/$PROJECT_PATH/-/releases/v$VERSION"
-  fi
+if [[ -n "${PROJECT_PATH:-}" ]]; then
+  echo "GitLab Release: https://git.zib.de/$PROJECT_PATH/-/releases/v$VERSION"
 fi
 echo ""
 
