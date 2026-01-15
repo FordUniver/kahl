@@ -2,19 +2,22 @@
 # Create a release of kahl
 #
 # Usage:
-#   ./release.sh 0.2.0              # Full release workflow
-#   ./release.sh --dry-run 0.2.0    # Show what would happen
-#   ./release.sh --skip-bump 0.2.0  # Skip version bump (if already done)
-#   ./release.sh --no-push 0.2.0    # Don't push to remote
+#   ./release.sh 0.2.0                    # Full release (all platforms)
+#   ./release.sh --dry-run 0.2.0          # Show what would happen
+#   ./release.sh --platform native 0.2.0  # Only current platform
+#   ./release.sh --skip-bump 0.2.0        # Skip version bump (if already done)
+#   ./release.sh --no-push 0.2.0          # Don't push to remote
+#   ./release.sh --no-gitlab-release 0.2.0  # Skip GitLab release creation
 #
 # This script:
 # 1. Bumps version (via bump-version.sh) if not skipped
-# 2. Builds all implementations for current platform
+# 2. Builds all implementations for all platforms
 # 3. Generates SHA256 checksums
 # 4. Signs checksums with GPG
 # 5. Creates signed git tag
 # 6. Pushes to remote (commit + tag)
-# 7. Optionally publishes to package registries
+# 7. Creates GitLab release with artifacts
+# 8. Optionally publishes to package registries
 
 set -euo pipefail
 
@@ -24,6 +27,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=false
 SKIP_BUMP=false
 NO_PUSH=false
+NO_GITLAB_RELEASE=false
+PLATFORMS="all"
 PUBLISH_CARGO=false
 PUBLISH_PYPI=false
 PUBLISH_NPM=false
@@ -42,6 +47,14 @@ while [[ $# -gt 0 ]]; do
     --no-push)
       NO_PUSH=true
       shift
+      ;;
+    --no-gitlab-release)
+      NO_GITLAB_RELEASE=true
+      shift
+      ;;
+    --platform)
+      PLATFORMS="$2"
+      shift 2
       ;;
     --publish-cargo)
       PUBLISH_CARGO=true
@@ -62,7 +75,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      head -20 "$0" | tail -15
+      head -20 "$0" | tail -17
       exit 0
       ;;
     *)
@@ -119,12 +132,12 @@ echo ""
 # Step 2: Build all implementations
 # ============================================================================
 
-echo "Step 2: Building all implementations..."
+echo "Step 2: Building all implementations for platforms: $PLATFORMS..."
 
 if [[ "$DRY_RUN" == "true" ]]; then
-  echo "  Would run: ./build-all.sh --checksums"
+  echo "  Would run: ./build-all.sh --platform $PLATFORMS --checksums"
 else
-  "$REPO_ROOT/build-all.sh" --checksums
+  "$REPO_ROOT/build-all.sh" --platform "$PLATFORMS" --checksums
 fi
 
 echo ""
@@ -212,10 +225,48 @@ fi
 echo ""
 
 # ============================================================================
-# Step 7: Publish to package registries
+# Step 7: Create GitLab release with artifacts
 # ============================================================================
 
-echo "Step 7: Package publishing..."
+if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
+  echo "Step 7: Creating GitLab release..."
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "  Would run: glab release create v$VERSION --title 'v$VERSION' ..."
+    echo "  Would attach:"
+    find "$REPO_ROOT/build" -type f \( -path "*/standalone/kahl-*" -o -name "checksums-$VERSION*" \) 2>/dev/null | sort | while read -r f; do
+      echo "    - $(basename "$f")"
+    done
+  else
+    # Collect all artifacts: versioned binaries in */standalone/ and checksums
+    ARTIFACTS=()
+    while IFS= read -r -d '' f; do
+      ARTIFACTS+=("$f")
+    done < <(find "$REPO_ROOT/build" -type f \( -path "*/standalone/kahl-*" -o -name "checksums-$VERSION*" \) -print0 2>/dev/null | sort -z)
+
+    if [[ ${#ARTIFACTS[@]} -eq 0 ]]; then
+      echo "  Warning: No artifacts found in build/"
+    else
+      echo "  Uploading ${#ARTIFACTS[@]} artifacts..."
+      glab release create "v$VERSION" \
+        --title "v$VERSION" \
+        --notes "Release v$VERSION" \
+        --repo "$(git -C "$REPO_ROOT" remote get-url origin)" \
+        "${ARTIFACTS[@]}"
+      echo "  Created release: v$VERSION"
+    fi
+  fi
+else
+  echo "Step 7: Skipping GitLab release (--no-gitlab-release or --no-push)"
+fi
+
+echo ""
+
+# ============================================================================
+# Step 8: Publish to package registries
+# ============================================================================
+
+echo "Step 8: Package publishing..."
 
 if [[ "$PUBLISH_CARGO" == "true" ]]; then
   echo "  Publishing to crates.io..."
@@ -260,12 +311,22 @@ echo "Version: $VERSION"
 echo "Tag: v$VERSION"
 echo ""
 echo "Artifacts:"
-find "$REPO_ROOT/build" -type f -name "kahl-*-$VERSION*" -exec ls -lh {} \; 2>/dev/null | while read -r line; do
+find "$REPO_ROOT/build" -type f -path "*/standalone/kahl-*" -exec ls -lh {} \; 2>/dev/null | sort | while read -r line; do
   echo "  $line"
 done
 echo ""
 echo "Checksums: $CHECKSUM_FILE"
 [[ -f "$CHECKSUM_FILE.asc" ]] && echo "Signature: $CHECKSUM_FILE.asc"
+echo ""
+
+if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
+  # Extract project path from remote URL (strip .git suffix if present)
+  REMOTE_URL=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")
+  if [[ "$REMOTE_URL" =~ git\.zib\.de[:/](.+)$ ]]; then
+    PROJECT_PATH="${BASH_REMATCH[1]%.git}"
+    echo "GitLab Release: https://git.zib.de/$PROJECT_PATH/-/releases/v$VERSION"
+  fi
+fi
 echo ""
 
 if [[ "$DRY_RUN" == "true" ]]; then
