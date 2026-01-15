@@ -1,4 +1,4 @@
-#\!/usr/bin/env bash
+#!/usr/bin/env bash
 # Clean generated files and build artifacts
 #
 # Usage:
@@ -15,7 +15,7 @@ echo "Cleaning generated files..."
 rm -f "$REPO_ROOT/go/patterns_gen.go"
 rm -f "$REPO_ROOT/rust/src/patterns_gen.rs"
 rm -f "$REPO_ROOT/swift/patterns_gen.swift"
-rm -f "$REPO_ROOT/swift/version_gen.swift"
+# Note: swift/version_gen.swift is tracked with a default fallback value
 rm -f "$REPO_ROOT/ruby/patterns_gen.rb"
 rm -f "$REPO_ROOT/perl/Patterns.pm"
 rm -f "$REPO_ROOT/bun/patterns_gen.ts"

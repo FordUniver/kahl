@@ -11,13 +11,14 @@
 #
 # This script:
 # 1. Bumps version (via bump-version.sh) if not skipped
-# 2. Builds all implementations for all platforms
-# 3. Generates SHA256 checksums
-# 4. Signs checksums with GPG
-# 5. Creates signed git tag
-# 6. Pushes to remote (commit + tag)
-# 7. Creates GitLab release with artifacts
-# 8. Optionally publishes to package registries
+# 2. Cleans previous build artifacts
+# 3. Builds all implementations for all platforms
+# 4. Generates SHA256 checksums
+# 5. Signs checksums with GPG
+# 6. Creates signed git tag
+# 7. Pushes to remote (commit + tag)
+# 8. Creates GitLab release with artifacts
+# 9. Optionally publishes to package registries
 
 set -euo pipefail
 
