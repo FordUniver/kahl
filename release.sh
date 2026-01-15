@@ -211,12 +211,12 @@ else
   if git -C "$REPO_ROOT" tag | grep -q "^v$VERSION$"; then
     echo "  Tag v$VERSION already exists, skipping"
   else
-    if command -v gpg &>/dev/null && gpg --list-secret-keys &>/dev/null; then
-      git -C "$REPO_ROOT" tag -s "v$VERSION" -m "Release v$VERSION"
+    # Try signed tag, fall back to annotated if signing fails
+    if git -C "$REPO_ROOT" tag -s "v$VERSION" -m "Release v$VERSION" 2>/dev/null; then
       echo "  Created signed tag: v$VERSION"
     else
       git -C "$REPO_ROOT" tag -a "v$VERSION" -m "Release v$VERSION"
-      echo "  Created annotated tag: v$VERSION (no GPG key for signing)"
+      echo "  Created annotated tag: v$VERSION (signing unavailable)"
     fi
   fi
 fi
