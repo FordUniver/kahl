@@ -15,8 +15,12 @@ OUTPUT="$SCRIPT_DIR/src/patterns_gen.rs"
 # Check dependencies
 command -v yq >/dev/null 2>&1 || { echo "Error: yq is required" >&2; exit 1; }
 
-# Compute source hash for tracking
-patterns_hash=$(cat "$PATTERNS_DIR/patterns.yaml" "$PATTERNS_DIR/env.yaml" "$PATTERNS_DIR/entropy.yaml" 2>/dev/null | shasum -a 256 | cut -c1-12)
+# Compute source hash for tracking (portable: sha256sum on Linux, shasum on macOS)
+if command -v sha256sum >/dev/null 2>&1; then
+    patterns_hash=$(cat "$PATTERNS_DIR/patterns.yaml" "$PATTERNS_DIR/env.yaml" "$PATTERNS_DIR/entropy.yaml" 2>/dev/null | sha256sum | cut -c1-12)
+else
+    patterns_hash=$(cat "$PATTERNS_DIR/patterns.yaml" "$PATTERNS_DIR/env.yaml" "$PATTERNS_DIR/entropy.yaml" 2>/dev/null | shasum -a 256 | cut -c1-12)
+fi
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Helper: format a pattern as a Rust raw string literal
