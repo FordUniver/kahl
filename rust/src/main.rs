@@ -58,6 +58,42 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
         }
     }
 
+    // Check for --help or -h
+    for arg in &args[1..] {
+        if arg == "--help" || arg == "-h" {
+            // TODO: print help text
+            std::process::exit(0);
+        }
+    }
+
+    // Validate all arguments - reject unknown flags
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg.starts_with('-') {
+            // Check if it's a known flag
+            let is_known = arg == "-v"
+                || arg == "--version"
+                || arg == "-h"
+                || arg == "--help"
+                || arg == "-f"
+                || arg == "--filter"
+                || arg.starts_with("--filter=");
+
+            if !is_known {
+                eprintln!("Error: Unknown option: {}", arg);
+                eprintln!("Try 'kahl --help' for more information.");
+                std::process::exit(1);
+            }
+
+            // Skip next arg if this is -f or --filter (they take a value)
+            if arg == "-f" || arg == "--filter" {
+                i += 1;
+            }
+        }
+        i += 1;
+    }
+
     // Check for --filter=X or -f X in args
     let mut cli_filter: Option<String> = None;
     let mut i = 1;

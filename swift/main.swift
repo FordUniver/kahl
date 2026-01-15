@@ -85,6 +85,39 @@ func parseFilterArgs() -> (FilterConfig, Bool)? {
         }
     }
 
+    // Check for --help or -h
+    for arg in args.dropFirst() {
+        if arg == "--help" || arg == "-h" {
+            // TODO: print help text
+            exit(0)
+        }
+    }
+
+    // Validate all arguments - reject unknown flags
+    var i = 1
+    while i < args.count {
+        let arg = args[i]
+        if arg.hasPrefix("-") {
+            // Check if it's a known flag
+            let isKnown = arg == "-v" || arg == "--version" ||
+                          arg == "-h" || arg == "--help" ||
+                          arg == "-f" || arg == "--filter" ||
+                          arg.hasPrefix("--filter=") || arg.hasPrefix("-f")
+
+            if !isKnown {
+                fputs("Error: Unknown option: \(arg)\n", stderr)
+                fputs("Try 'kahl --help' for more information.\n", stderr)
+                exit(1)
+            }
+
+            // Skip next arg if this is -f or --filter (they take a value)
+            if arg == "-f" || arg == "--filter" {
+                i += 1
+            }
+        }
+        i += 1
+    }
+
     var config = FilterConfig(valuesEnabled: false, patternsEnabled: false, entropyEnabled: false)
     var hadFilterArg = false
     var hadValidFilter = false

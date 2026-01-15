@@ -411,7 +411,7 @@ Source hash: {source_hash}
 Generated: {timestamp}
 
 This is a standalone version of kahl with all pattern definitions
-embedded. Deploy to ~/.claude/kahl for use with Claude Code.
+embedded as a single executable file.
 
 To regenerate: python python/generate.py
 """

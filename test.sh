@@ -59,6 +59,42 @@ test_flag() {
     echo
 }
 
+# Test helper for error cases - flag should cause exit code != 0
+test_flag_error() {
+    local name="$1"
+    local flag="$2"
+    local expect_stderr_pattern="$3"  # regex pattern for stderr (optional)
+
+    echo "=== $name ==="
+    for impl in "${IMPLS[@]}"; do
+        local exit_code=0
+        local stderr_output
+        stderr_output=$(./"$impl" "$flag" 2>&1 >/dev/null) || exit_code=$?
+
+        if [[ $exit_code -ne 0 ]]; then
+            # Check stderr pattern if provided
+            if [[ -n "$expect_stderr_pattern" ]]; then
+                if echo "$stderr_output" | grep -qE "$expect_stderr_pattern"; then
+                    printf "  %-25s pass\n" "$(impl_name "$impl"):"
+                    ((PASS++)) || true
+                else
+                    printf "  %-25s FAIL (wrong error message)\n" "$(impl_name "$impl"):"
+                    printf "    expected pattern: %s\n" "$expect_stderr_pattern"
+                    printf "    got stderr:       %s\n" "$stderr_output"
+                    ((FAIL++)) || true
+                fi
+            else
+                printf "  %-25s pass\n" "$(impl_name "$impl"):"
+                ((PASS++)) || true
+            fi
+        else
+            printf "  %-25s FAIL (exit 0, should error)\n" "$(impl_name "$impl"):"
+            ((FAIL++)) || true
+        fi
+    done
+    echo
+}
+
 # Test helper - checks if output matches pattern
 test_case() {
     local name="$1"
@@ -115,6 +151,65 @@ test_exact() {
 EXPECTED_VERSION=$(cat VERSION)
 test_flag "Version flag (--version)" "--version" "$EXPECTED_VERSION"
 test_flag "Version flag (-v)" "-v" "$EXPECTED_VERSION"
+
+#############################################
+# Unknown Flag Rejection
+#############################################
+
+test_flag_error "Unknown long flag" "--typo" "nknown.*option|nknown.*flag"
+test_flag_error "Unknown short flag" "-x" "nknown.*option|nknown.*flag"
+test_flag_error "Unknown flag with value" "--invalid=value" "nknown.*option|nknown.*flag"
+
+#############################################
+# Filter Flag Variations
+#############################################
+
+# Test that both --filter=X and --filter X work
+# We'll test with a valid GitHub PAT (needs 36 chars after ghp_)
+echo "=== Filter flag with = (--filter=patterns) ==="
+for impl in "${IMPLS[@]}"; do
+    result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$impl" --filter=patterns 2>/dev/null) || result="[ERROR]"
+    if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
+        printf "  %-25s pass\n" "$(impl_name "$impl"):"
+        ((PASS++)) || true
+    else
+        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
+        printf "    expected: redaction\n"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
+done
+echo
+
+echo "=== Filter flag with space (--filter patterns) ==="
+for impl in "${IMPLS[@]}"; do
+    result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$impl" --filter patterns 2>/dev/null) || result="[ERROR]"
+    if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
+        printf "  %-25s pass\n" "$(impl_name "$impl"):"
+        ((PASS++)) || true
+    else
+        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
+        printf "    expected: redaction\n"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
+done
+echo
+
+echo "=== Filter flag short form (-f patterns) ==="
+for impl in "${IMPLS[@]}"; do
+    result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$impl" -f patterns 2>/dev/null) || result="[ERROR]"
+    if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
+        printf "  %-25s pass\n" "$(impl_name "$impl"):"
+        ((PASS++)) || true
+    else
+        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
+        printf "    expected: redaction\n"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
+done
+echo
 
 #############################################
 # GitHub Patterns

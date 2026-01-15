@@ -61,6 +61,35 @@ def parse_filters
     end
   end
 
+  # Check for --help or -h
+  ARGV.each do |arg|
+    if arg == '--help' || arg == '-h'
+      # TODO: print help text
+      exit 0
+    end
+  end
+
+  # Validate all arguments - reject unknown flags
+  i = 0
+  while i < ARGV.length
+    arg = ARGV[i]
+    if arg.start_with?('-')
+      # Check if it's a known flag
+      is_known = ['-v', '--version', '-h', '--help', '-f', '--filter'].include?(arg) ||
+                 arg.start_with?('--filter=')
+
+      unless is_known
+        warn "Error: Unknown option: #{arg}"
+        warn "Try 'kahl --help' for more information."
+        exit 1
+      end
+
+      # Skip next arg if this is -f or --filter (they take a value)
+      i += 1 if arg == '-f' || arg == '--filter'
+    end
+    i += 1
+  end
+
   values_enabled = true
   patterns_enabled = true
   entropy_enabled = PatternsGen::ENTROPY_ENABLED_DEFAULT

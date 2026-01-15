@@ -193,6 +193,37 @@ func parseFilterConfig() FilterConfig {
 		}
 	}
 
+	// Check for --help or -h
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			// TODO: print help text
+			os.Exit(0)
+		}
+	}
+
+	// Validate all arguments - reject unknown flags
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// Check if it's a known flag
+			isKnown := arg == "-v" || arg == "--version" ||
+				arg == "-h" || arg == "--help" ||
+				arg == "-f" || arg == "--filter" ||
+				strings.HasPrefix(arg, "--filter=") || strings.HasPrefix(arg, "-f=")
+
+			if !isKnown {
+				fmt.Fprintf(os.Stderr, "Error: Unknown option: %s\n", arg)
+				fmt.Fprintln(os.Stderr, "Try 'kahl --help' for more information.")
+				os.Exit(1)
+			}
+
+			// Skip next arg if this is -f or --filter (they take a value)
+			if arg == "-f" || arg == "--filter" {
+				i++
+			}
+		}
+	}
+
 	// Check for --filter or -f in args
 	var filterArg string
 	for i := 0; i < len(args); i++ {

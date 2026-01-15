@@ -97,6 +97,37 @@ function parseFilterConfig(): { values: boolean; patterns: boolean; entropy: boo
     }
   }
 
+  // Check for --help or -h
+  for (const arg of args) {
+    if (arg === '--help' || arg === '-h') {
+      // TODO: print help text
+      process.exit(0);
+    }
+  }
+
+  // Validate all arguments - reject unknown flags
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('-')) {
+      // Check if it's a known flag
+      const isKnown = arg === '-v' || arg === '--version' ||
+                      arg === '-h' || arg === '--help' ||
+                      arg === '-f' || arg === '--filter' ||
+                      arg.startsWith('--filter=') || arg.startsWith('-f');
+
+      if (!isKnown) {
+        console.error(`Error: Unknown option: ${arg}`);
+        console.error("Try 'kahl --help' for more information.");
+        process.exit(1);
+      }
+
+      // Skip next arg if this is -f or --filter (they take a value)
+      if (arg === '-f' || arg === '--filter') {
+        i++;
+      }
+    }
+  }
+
   // Check CLI args first (--filter=X or -f X)
   let cliFilters: string | null = null;
 

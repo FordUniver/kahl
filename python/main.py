@@ -645,9 +645,30 @@ def flush_buffer_redacted(buffer: list[str], secrets: dict[str, str] | None,
 
 def main():
     """Stream stdin line-by-line with state machine for private keys."""
+    # Validate arguments - reject unknown flags
+    known_flags = {'-v', '--version', '-h', '--help', '-f', '--filter'}
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg.startswith('-'):
+            # Check if it's a known flag
+            if arg not in known_flags and not arg.startswith('--filter='):
+                print(f"Error: Unknown option: {arg}", file=sys.stderr)
+                print("Try 'kahl --help' for more information.", file=sys.stderr)
+                sys.exit(1)
+            # Skip next arg if this is -f or --filter (they take a value)
+            if arg in ('-f', '--filter'):
+                i += 1
+        i += 1
+
     # Check for --version or -v
     if '--version' in sys.argv or '-v' in sys.argv:
         print(__version__, end='')
+        sys.exit(0)
+
+    # Check for --help or -h
+    if '--help' in sys.argv or '-h' in sys.argv:
+        # TODO: print help text
         sys.exit(0)
 
     # Determine which filters are enabled
