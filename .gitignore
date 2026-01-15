@@ -1,7 +1,7 @@
 # Build artifacts
 build/
 
-# Compiled binaries in language directories (old structure)
+# Compiled binaries in language directories
 go/kahl
 rust/kahl
 swift/kahl

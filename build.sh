@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Legacy build script - forwards to build-all.sh
-# Use build-all.sh directly for more options.
+# Build all kahl implementations (standalone mode)
+# See build-all.sh for more options.
 
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
