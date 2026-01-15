@@ -9,6 +9,9 @@ BUILD_DIR="$REPO_ROOT/build"
 echo "Building kahl implementations..."
 mkdir -p "$BUILD_DIR"
 
+# Copy VERSION file to build directory for script implementations
+cp "$REPO_ROOT/VERSION" "$BUILD_DIR/"
+
 # Python: Generate patterns and create standalone
 echo "  Python..."
 (cd "$REPO_ROOT/python" && python3 generate.py)

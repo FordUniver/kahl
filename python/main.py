@@ -37,6 +37,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+# Version from VERSION file
+__version__ = (Path(__file__).parent.parent / "VERSION").read_text().strip()
+
 # Ensure patterns_gen.py exists before importing
 # Uses mtime comparison to avoid subprocess overhead on every invocation
 SCRIPT_DIR = Path(__file__).parent
@@ -642,6 +645,11 @@ def flush_buffer_redacted(buffer: list[str], secrets: dict[str, str] | None,
 
 def main():
     """Stream stdin line-by-line with state machine for private keys."""
+    # Check for --version or -v
+    if '--version' in sys.argv or '-v' in sys.argv:
+        print(__version__, end='')
+        sys.exit(0)
+
     # Determine which filters are enabled
     values_enabled, patterns_enabled, entropy_enabled = get_enabled_filters()
 

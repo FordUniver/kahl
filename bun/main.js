@@ -17,6 +17,9 @@ import { dirname, join } from 'path';
 // Auto-regenerate patterns if missing or outdated (must complete before dynamic import)
 const scriptDir = dirname(Bun.main);
 const repoRoot = join(scriptDir, '..');
+
+// Version from VERSION file
+const VERSION = await Bun.file(join(repoRoot, 'VERSION')).text();
 const patternsGenPath = join(scriptDir, 'patterns_gen.ts');
 const yamlSources = [
   join(repoRoot, 'patterns/patterns.yaml'),
@@ -85,8 +88,16 @@ function isEnvEnabled(name: string): boolean {
 
 // Parse filter configuration from CLI args and environment
 function parseFilterConfig(): { values: boolean; patterns: boolean; entropy: boolean } {
-  // Check CLI args first (--filter=X or -f X)
+  // Check for --version or -v
   const args = Bun.argv.slice(2);
+  for (const arg of args) {
+    if (arg === '--version' || arg === '-v') {
+      process.stdout.write(VERSION);
+      process.exit(0);
+    }
+  }
+
+  // Check CLI args first (--filter=X or -f X)
   let cliFilters: string | null = null;
 
   for (let i = 0; i < args.length; i++) {

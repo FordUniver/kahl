@@ -16,6 +16,16 @@ binmode(STDOUT, ':raw');
 binmode(STDERR, ':encoding(UTF-8)');
 use Getopt::Long qw(:config no_ignore_case bundling);
 
+# Version from VERSION file
+our $VERSION;
+BEGIN {
+    my $script_dir = dirname(__FILE__);
+    open my $fh, '<', "$script_dir/../VERSION" or die "Failed to read VERSION: $!\n";
+    $VERSION = do { local $/; <$fh> };
+    close $fh;
+    chomp $VERSION;
+}
+
 # Auto-flush stdout
 $| = 1;
 
@@ -67,6 +77,14 @@ sub is_env_enabled {
 
 # Get enabled filters from CLI and ENV
 sub get_enabled_filters {
+    # Check for --version or -v
+    for my $arg (@ARGV) {
+        if ($arg eq '--version' || $arg eq '-v') {
+            print $VERSION;
+            exit 0;
+        }
+    }
+
     my $filter_arg;
 
     # Parse CLI arguments

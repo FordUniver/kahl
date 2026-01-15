@@ -369,6 +369,10 @@ def generate_standalone() -> str:
     source_hash = compute_source_hash()
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Read version from VERSION file
+    version_file = REPO_ROOT / "VERSION"
+    version = version_file.read_text().strip() if version_file.exists() else "unknown"
+
     # Generate pattern data (same as patterns_gen.py but without module docstring)
     pattern_sections = [
         "# Constants",
@@ -416,6 +420,9 @@ import os
 import re
 import sys
 from collections import Counter
+
+# Version
+__version__ = "{version}"
 
 '''
 

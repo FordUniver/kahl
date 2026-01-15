@@ -28,6 +28,9 @@ unless File.exist?(patterns_gen)
 end
 require_relative 'patterns_gen'
 
+# Version from VERSION file
+VERSION = File.read(File.join(script_dir, '..', 'VERSION')).strip.freeze
+
 # Auto-flush stdout
 $stdout.sync = true
 
@@ -50,6 +53,14 @@ VALID_FILTERS = %w[values patterns entropy all].freeze
 
 # Parse filter configuration from CLI args and environment
 def parse_filters
+  # Check for --version or -v
+  ARGV.each do |arg|
+    if arg == '--version' || arg == '-v'
+      print VERSION
+      exit 0
+    end
+  end
+
   values_enabled = true
   patterns_enabled = true
   entropy_enabled = PatternsGen::ENTROPY_ENABLED_DEFAULT

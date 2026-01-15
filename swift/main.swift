@@ -22,6 +22,14 @@
 
 import Foundation
 
+// Version from VERSION file
+let version: String = {
+    let scriptPath = CommandLine.arguments[0]
+    let scriptDir = URL(fileURLWithPath: scriptPath).deletingLastPathComponent()
+    let versionFile = scriptDir.deletingLastPathComponent().appendingPathComponent("VERSION")
+    return (try? String(contentsOf: versionFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "unknown"
+}()
+
 // MARK: - NSRegularExpression Helpers
 
 /// Compiled NSRegularExpression with label for pattern matching
@@ -68,11 +76,19 @@ func isTruthy(_ value: String) -> Bool {
 // Parse --filter CLI arguments
 // Returns: (config, hadValidFilter) or nil if error (all invalid filters)
 func parseFilterArgs() -> (FilterConfig, Bool)? {
+    // Check for --version or -v
+    let args = CommandLine.arguments
+    for arg in args.dropFirst() {
+        if arg == "--version" || arg == "-v" {
+            print(version, terminator: "")
+            exit(0)
+        }
+    }
+
     var config = FilterConfig(valuesEnabled: false, patternsEnabled: false, entropyEnabled: false)
     var hadFilterArg = false
     var hadValidFilter = false
 
-    let args = CommandLine.arguments
     for arg in args.dropFirst() {  // Skip program name
         var filterValue: String? = nil
 

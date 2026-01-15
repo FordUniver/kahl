@@ -9,6 +9,8 @@
 //
 // Default: values + patterns enabled, entropy disabled. CLI overrides ENV entirely.
 
+const VERSION: &str = include_str!("../../VERSION");
+
 mod patterns_gen;
 use patterns_gen::*;
 
@@ -47,6 +49,14 @@ fn is_truthy(val: &str) -> bool {
 /// Parse filter configuration from CLI args and environment
 fn parse_filter_config() -> Result<FilterConfig, String> {
     let args: Vec<String> = env::args().collect();
+
+    // Check for --version or -v
+    for arg in &args[1..] {
+        if arg == "--version" || arg == "-v" {
+            print!("{}", VERSION);
+            std::process::exit(0);
+        }
+    }
 
     // Check for --filter=X or -f X in args
     let mut cli_filter: Option<String> = None;

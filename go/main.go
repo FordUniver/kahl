@@ -9,12 +9,28 @@ import (
 	"io"
 	gomath "math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 )
+
+// Read version from VERSION file at startup
+var version = func() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "unknown"
+	}
+	exeDir := filepath.Dir(exePath)
+	versionPath := filepath.Join(exeDir, "..", "VERSION")
+	data, err := os.ReadFile(versionPath)
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(data))
+}()
 
 // Filter configuration
 type FilterConfig struct {
@@ -168,9 +184,17 @@ func parseFilterConfig() FilterConfig {
 		EntropyEnabled:  false, // Entropy is off by default
 	}
 
+	// Check for --version or -v
+	args := os.Args[1:]
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			fmt.Print(version)
+			os.Exit(0)
+		}
+	}
+
 	// Check for --filter or -f in args
 	var filterArg string
-	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "--filter=") {

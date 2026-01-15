@@ -35,6 +35,30 @@ impl_name() {
     basename "$1" | sed 's/^kahl-//'
 }
 
+# Test helper for CLI flags (no stdin)
+test_flag() {
+    local name="$1"
+    local flag="$2"
+    local expect="$3"  # exact match expected
+
+    echo "=== $name ==="
+    for impl in "${IMPLS[@]}"; do
+        local result
+        result=$(./"$impl" "$flag" 2>/dev/null) || result="[ERROR]"
+
+        if [[ "$result" == "$expect" ]]; then
+            printf "  %-25s pass\n" "$(impl_name "$impl"):"
+            ((PASS++)) || true
+        else
+            printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
+            printf "    expected: %s\n" "$expect"
+            printf "    got:      %s\n" "$result"
+            ((FAIL++)) || true
+        fi
+    done
+    echo
+}
+
 # Test helper - checks if output matches pattern
 test_case() {
     local name="$1"
@@ -82,6 +106,15 @@ test_exact() {
     done
     echo
 }
+
+#############################################
+# Version Flag
+#############################################
+
+# Read expected version from VERSION file
+EXPECTED_VERSION=$(cat VERSION)
+test_flag "Version flag (--version)" "--version" "$EXPECTED_VERSION"
+test_flag "Version flag (-v)" "-v" "$EXPECTED_VERSION"
 
 #############################################
 # GitHub Patterns
