@@ -129,10 +129,24 @@ fi
 echo ""
 
 # ============================================================================
-# Step 2: Build all implementations
+# Step 2: Clean previous build artifacts
 # ============================================================================
 
-echo "Step 2: Building all implementations for platforms: $PLATFORMS..."
+echo "Step 2: Cleaning previous build artifacts..."
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "  Would run: ./clean.sh --all"
+else
+  "$REPO_ROOT/clean.sh" --all
+fi
+
+echo ""
+
+# ============================================================================
+# Step 3: Build all implementations
+# ============================================================================
+
+echo "Step 3: Building all implementations for platforms: $PLATFORMS..."
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "  Would run: ./build-all.sh --platform $PLATFORMS --checksums"
@@ -143,10 +157,10 @@ fi
 echo ""
 
 # ============================================================================
-# Step 3: Generate checksums
+# Step 4: Generate checksums
 # ============================================================================
 
-echo "Step 3: Generating checksums..."
+echo "Step 4: Generating checksums..."
 
 CHECKSUM_FILE="$REPO_ROOT/build/checksums-$VERSION.txt"
 
@@ -163,10 +177,10 @@ fi
 echo ""
 
 # ============================================================================
-# Step 4: Sign checksums with GPG
+# Step 5: Sign checksums with GPG
 # ============================================================================
 
-echo "Step 4: Signing checksums with GPG..."
+echo "Step 5: Signing checksums with GPG..."
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "  Would run: gpg --armor --detach-sign $CHECKSUM_FILE"
@@ -182,10 +196,10 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: Create signed git tag
+# Step 6: Create signed git tag
 # ============================================================================
 
-echo "Step 5: Creating git tag v$VERSION..."
+echo "Step 6: Creating git tag v$VERSION..."
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "  Would run: git tag -s v$VERSION -m 'Release v$VERSION'"
@@ -205,11 +219,11 @@ fi
 echo ""
 
 # ============================================================================
-# Step 6: Push to remote
+# Step 7: Push to remote
 # ============================================================================
 
 if [[ "$NO_PUSH" == "false" ]]; then
-  echo "Step 6: Pushing to remote..."
+  echo "Step 7: Pushing to remote..."
 
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "  Would run: git push && git push --tags"
@@ -219,17 +233,17 @@ if [[ "$NO_PUSH" == "false" ]]; then
     echo "  Pushed commit and tags"
   fi
 else
-  echo "Step 6: Skipping push (--no-push)"
+  echo "Step 7: Skipping push (--no-push)"
 fi
 
 echo ""
 
 # ============================================================================
-# Step 7: Create GitLab release with artifacts
+# Step 8: Create GitLab release with artifacts
 # ============================================================================
 
 if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
-  echo "Step 7: Creating GitLab release..."
+  echo "Step 8: Creating GitLab release..."
 
   # Extract project path from remote URL (strip .git suffix if present)
   REMOTE_URL=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")
@@ -267,16 +281,16 @@ if [[ "$NO_GITLAB_RELEASE" == "false" && "$NO_PUSH" == "false" ]]; then
     fi
   fi
 else
-  echo "Step 7: Skipping GitLab release (--no-gitlab-release or --no-push)"
+  echo "Step 8: Skipping GitLab release (--no-gitlab-release or --no-push)"
 fi
 
 echo ""
 
 # ============================================================================
-# Step 8: Publish to package registries
+# Step 9: Publish to package registries
 # ============================================================================
 
-echo "Step 8: Package publishing..."
+echo "Step 9: Package publishing..."
 
 if [[ "$PUBLISH_CARGO" == "true" ]]; then
   echo "  Publishing to crates.io..."
