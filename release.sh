@@ -98,6 +98,13 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
   exit 1
 fi
 
+# Validate branch (releases only from main)
+CURRENT_BRANCH=$(git -C "$REPO_ROOT" branch --show-current)
+if [[ "$CURRENT_BRANCH" != "main" ]]; then
+  echo "Error: Releases must be made from main branch (currently on: $CURRENT_BRANCH)" >&2
+  exit 1
+fi
+
 echo "=== kahl Release $VERSION ==="
 echo ""
 
@@ -224,18 +231,31 @@ fi
 echo ""
 
 # ============================================================================
-# Step 7: Push to remote
+# Step 7: Push to remotes (GitLab + GitHub)
 # ============================================================================
 
 if [[ "$NO_PUSH" == "false" ]]; then
-  echo "Step 7: Pushing to remote..."
+  echo "Step 7: Pushing to remotes..."
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "  Would run: git push && git push --tags"
+    echo "  Would run: git push origin && git push origin --tags"
+    echo "  Would run: git push github main && git push github --tags"
   else
-    git -C "$REPO_ROOT" push
-    git -C "$REPO_ROOT" push --tags
-    echo "  Pushed commit and tags"
+    # Push to GitLab (origin) - full push
+    echo "  Pushing to GitLab (origin)..."
+    git -C "$REPO_ROOT" push origin
+    git -C "$REPO_ROOT" push origin --tags
+
+    # Push to GitHub - ONLY main branch and tags (never other branches)
+    if git -C "$REPO_ROOT" remote get-url github &>/dev/null; then
+      echo "  Pushing to GitHub (main + tags only)..."
+      git -C "$REPO_ROOT" push github main
+      git -C "$REPO_ROOT" push github --tags
+    else
+      echo "  GitHub remote not configured, skipping"
+    fi
+
+    echo "  Pushed to all remotes"
   fi
 else
   echo "Step 7: Skipping push (--no-push)"

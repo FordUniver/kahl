@@ -1,2 +1,1 @@
-// Generated at build time - default fallback
-let version = "unknown"
+let version = "0.1.0"
