@@ -312,6 +312,34 @@ fi
 echo ""
 
 # ============================================================================
+# Step 8b: Create GitHub release with artifacts
+# ============================================================================
+
+if [[ "$NO_PUSH" == "false" ]] && git -C "$REPO_ROOT" remote get-url github &>/dev/null; then
+  echo "Step 8b: Creating GitHub release..."
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "  Would run: gh release create v$VERSION --repo FordUniver/kahl ..."
+  else
+    if [[ ${#ARTIFACTS[@]} -eq 0 ]]; then
+      echo "  Warning: No artifacts found in build/"
+    else
+      echo "  Uploading ${#ARTIFACTS[@]} artifacts to GitHub..."
+      gh release create "v$VERSION" \
+        --repo FordUniver/kahl \
+        --title "v$VERSION" \
+        --notes "Release v$VERSION" \
+        "${ARTIFACTS[@]}"
+      echo "  Created GitHub release: v$VERSION"
+    fi
+  fi
+else
+  echo "Step 8b: Skipping GitHub release (--no-push or no github remote)"
+fi
+
+echo ""
+
+# ============================================================================
 # Step 9: Publish to package registries
 # ============================================================================
 
@@ -370,6 +398,9 @@ echo ""
 
 if [[ -n "${PROJECT_PATH:-}" ]]; then
   echo "GitLab Release: https://git.zib.de/$PROJECT_PATH/-/releases/v$VERSION"
+fi
+if git -C "$REPO_ROOT" remote get-url github &>/dev/null; then
+  echo "GitHub Release: https://github.com/FordUniver/kahl/releases/tag/v$VERSION"
 fi
 echo ""
 
