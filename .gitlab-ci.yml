@@ -149,7 +149,9 @@ benchmark:
     - job: test:swift
       optional: true
   before_script:
-    - apt-get update && apt-get install -y python3 perl ruby curl unzip bc build-essential
+    - apt-get update && apt-get install -y python3 perl ruby curl unzip bc build-essential locales
+    - echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
+    - export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     # Install Go
     - curl -fsSL https://go.dev/dl/go1.23.0.linux-amd64.tar.gz | tar -C /usr/local -xzf -
     - export PATH="/usr/local/go/bin:$PATH"
@@ -159,7 +161,7 @@ benchmark:
     - curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
     - *install_test_deps
   script:
-    - export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$PATH"
+    - export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$PATH" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     - mkdir -p build
     # Build all implementations
     - echo "Building implementations..."
