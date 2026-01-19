@@ -149,7 +149,7 @@ benchmark:
     - job: test:swift
       optional: true
   before_script:
-    - apt-get update && apt-get install -y python3 perl ruby curl unzip bc
+    - apt-get update && apt-get install -y python3 perl ruby curl unzip bc build-essential
     # Install Go
     - curl -fsSL https://go.dev/dl/go1.23.0.linux-amd64.tar.gz | tar -C /usr/local -xzf -
     - export PATH="/usr/local/go/bin:$PATH"
