@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Build all kahl implementations (standalone mode)
-# See build-all.sh for more options.
-
+# Build kahl for current platform
 set -euo pipefail
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$(dirname "$0")"
 
-exec "$REPO_ROOT/build-all.sh" --mode standalone "$@"
+# Generate patterns from YAML
+./generate.sh
+
+# Build release binary
+cargo build --release
+
+# Copy to build/ for test.sh compatibility
+mkdir -p build
+cp target/release/kahl build/kahl
+
+echo "Built: build/kahl"
+ls -lh build/kahl

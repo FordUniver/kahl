@@ -1,4 +1,0 @@
-# OpenAI and Anthropic API key patterns
-sk-abcdefghijklmnopqrstuvwxyz01234567890123456789AB
-sk-proj-abcdefghij1234567890
-sk-ant-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

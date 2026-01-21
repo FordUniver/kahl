@@ -1,2 +1,0 @@
-# GitLab token patterns
-glpat-abcdefghij1234567890

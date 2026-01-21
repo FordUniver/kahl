@@ -1,34 +1,12 @@
 # Build artifacts
+/target/
 build/
 
-# Compiled binaries in language directories
-go/kahl
-rust/kahl
-swift/kahl
+# Compiled binary
+kahl
 
-# Generated pattern files (source of truth: patterns/*.yaml)
-go/patterns_gen.go
-rust/src/patterns_gen.rs
-swift/patterns_gen.swift
-ruby/patterns_gen.rb
-perl/Patterns.pm
-bun/patterns_gen.ts
-python/patterns_gen.py
-
-# Generated standalone scripts
-python/kahl-standalone
-ruby/kahl-standalone
-perl/kahl-standalone
-bun/kahl-standalone
-
-# Python build artifacts
-python/__pycache__/
-python/*.pyc
-
-# Language-specific build directories
-rust/target/
-go/go.mod
-go/go.sum
+# Generated pattern file (source of truth: patterns/*.yaml)
+src/patterns_gen.rs
 
 # Test artifacts
 tests/*.log

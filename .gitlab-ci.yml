@@ -1,189 +1,32 @@
 # GitLab CI for kahl
-# Runs tests for each implementation and benchmarks for passing ones
+# Rust-only implementation
 
 stages:
   - test
-  - benchmark
 
 variables:
   # Disable secrets filter in CI (testing secrets filter itself)
   CLAUDE_CODE_SHELL_PREFIX: ""
 
-# Common script to install test dependencies
-.install_test_deps: &install_test_deps
-  - |
-    # Ensure wget and bc are available (slim images may not have them)
-    apt-get update -qq && apt-get install -y -qq wget bc
-    # Install yq for YAML parsing
-    if ! command -v yq &>/dev/null; then
+test:
+  stage: test
+  image: rust:1.83-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq wget
+    # Install yq for YAML parsing (used by generate.sh)
+    - |
       YQ_VERSION="v4.50.1"
       YQ_BINARY="yq_linux_amd64"
       wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}" -O /usr/local/bin/yq
       chmod +x /usr/local/bin/yq
-    fi
-
-# Template for test jobs
-.test_template: &test_template
-  stage: test
-  before_script:
-    - *install_test_deps
-    - mkdir -p build tests
+    - mkdir -p build
   script:
+    - ./generate.sh
+    - cargo build --release --quiet
+    - cp target/release/kahl build/kahl
     - ./test.sh
   artifacts:
     when: on_failure
     paths:
       - tests/*.log
     expire_in: 1 week
-
-# Python tests (reference implementation)
-test:python:
-  <<: *test_template
-  image: python:3.12-slim
-  variables:
-    IMPL: python
-  before_script:
-    - *install_test_deps
-    - mkdir -p build
-    - (cd python && python3 generate.py)
-    - cp python/kahl-standalone build/kahl-python
-    - chmod +x build/kahl-python
-
-# Perl tests
-test:perl:
-  <<: *test_template
-  image: perl:5.40-slim
-  variables:
-    IMPL: perl
-  before_script:
-    - apt-get update && apt-get install -y wget
-    - *install_test_deps
-    - mkdir -p build
-    - (cd perl && perl generate.pl)
-    - cp perl/main.pl build/kahl-perl
-    - cp perl/Patterns.pm build/
-    - chmod +x build/kahl-perl
-
-# Ruby tests
-test:ruby:
-  <<: *test_template
-  image: ruby:3.3-slim
-  variables:
-    IMPL: ruby
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq locales && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
-    - *install_test_deps
-    - mkdir -p build
-    - (cd ruby && ruby generate.rb)
-    - cp ruby/main.rb build/kahl-ruby
-    - cp ruby/patterns_gen.rb build/
-    - chmod +x build/kahl-ruby
-
-# Bun tests
-test:bun:
-  <<: *test_template
-  image: oven/bun:1.1-debian
-  variables:
-    IMPL: bun
-  before_script:
-    - *install_test_deps
-    - mkdir -p build
-    - (cd bun && bun run generate.ts)
-    - cp bun/main.js build/kahl-bun
-    - cp bun/patterns_gen.ts build/
-    - chmod +x build/kahl-bun
-
-# Go tests (requires build)
-test:go:
-  <<: *test_template
-  image: golang:1.23
-  variables:
-    IMPL: go
-  before_script:
-    - *install_test_deps
-    - mkdir -p build
-    - (cd go && go run generate.go && go build -ldflags="-s -w -X main.version=$(cat ../VERSION)" -o ../build/kahl-go main.go patterns_gen.go)
-
-# Rust tests (requires build)
-test:rust:
-  <<: *test_template
-  image: rust:1.83-slim
-  variables:
-    IMPL: rust
-  before_script:
-    - *install_test_deps
-    - mkdir -p build
-    - (cd rust && ./generate.sh && cargo build --release --quiet)
-    - cp rust/target/release/kahl build/kahl-rust
-
-# Swift tests (requires build)
-test:swift:
-  <<: *test_template
-  image: swift:6.0
-  variables:
-    IMPL: swift
-  before_script:
-    - apt-get update && apt-get install -y wget
-    - *install_test_deps
-    - mkdir -p build tests
-    - echo "let version = \"$(cat VERSION)\"" > swift/version_gen.swift
-    - (cd swift && swift generate.swift && swiftc -O -whole-module-optimization -o ../build/kahl-swift main.swift patterns_gen.swift version_gen.swift)
-
-# Benchmark job - compares all 7 implementations on same hardware
-benchmark:
-  stage: benchmark
-  image: swift:6.0
-  needs:
-    - job: test:python
-      optional: true
-    - job: test:perl
-      optional: true
-    - job: test:ruby
-      optional: true
-    - job: test:bun
-      optional: true
-    - job: test:go
-      optional: true
-    - job: test:rust
-      optional: true
-    - job: test:swift
-      optional: true
-  before_script:
-    - apt-get update && apt-get install -y python3 perl ruby curl unzip bc build-essential locales
-    - echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
-    - export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-    # Install Go
-    - curl -fsSL https://go.dev/dl/go1.23.0.linux-amd64.tar.gz | tar -C /usr/local -xzf -
-    - export PATH="/usr/local/go/bin:$PATH"
-    # Install Rust
-    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    # Install bun
-    - curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
-    - *install_test_deps
-  script:
-    - export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$PATH" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-    - mkdir -p build
-    # Build all implementations
-    - echo "Building implementations..."
-    - (cd python && python3 generate.py) && cp python/kahl-standalone build/kahl-python && chmod +x build/kahl-python
-    - (cd perl && perl generate.pl) && cp perl/main.pl build/kahl-perl && cp perl/Patterns.pm build/ && chmod +x build/kahl-perl
-    - (cd ruby && ruby generate.rb) && cp ruby/main.rb build/kahl-ruby && cp ruby/patterns_gen.rb build/ && chmod +x build/kahl-ruby
-    - (cd bun && bun run generate.ts) && cp bun/main.js build/kahl-bun && cp bun/patterns_gen.ts build/ && chmod +x build/kahl-bun
-    - (cd go && go run generate.go && go build -ldflags="-s -w" -o ../build/kahl-go main.go patterns_gen.go)
-    - (cd rust && ./generate.sh && cargo build --release --quiet) && cp rust/target/release/kahl build/kahl-rust
-    - echo "let version = \"benchmark\"" > swift/version_gen.swift && (cd swift && swift generate.swift && swiftc -O -whole-module-optimization -o ../build/kahl-swift main.swift patterns_gen.swift version_gen.swift)
-    - echo "Built implementations:" && ls -la build/
-    - cd tests
-    # Generate corpus if needed
-    - chmod +x corpus/generate-corpus.sh && ./corpus/generate-corpus.sh
-    # Run benchmarks
-    - ./bench.sh 20
-    - echo "=== Benchmark Results ==="
-    - cat benchmark-results.csv
-  artifacts:
-    paths:
-      - tests/benchmark-results.csv
-    expire_in: 1 month
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"

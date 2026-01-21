@@ -1,3 +1,0 @@
-# Boundary tests - exact length requirements
-[REDACTED:GITHUB_PAT:ghp_36A]
-[REDACTED:GITLAB_PAT:glpat-20A]

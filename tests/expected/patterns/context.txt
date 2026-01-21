@@ -1,3 +1,0 @@
-# Context-preserving patterns
-https://user:[REDACTED:GIT_CREDENTIAL:13X]@github.com/repo.git
-{"auths": {"registry": {"auth": "[REDACTED:DOCKER_AUTH:24X]"}}}

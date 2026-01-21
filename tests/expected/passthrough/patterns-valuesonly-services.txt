@@ -1,5 +1,0 @@
-# Other service patterns
-SKaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-SG.abcdefghijk.lmnopqrstuvwxyz123456
-npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N

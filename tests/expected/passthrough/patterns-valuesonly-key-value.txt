@@ -1,5 +1,0 @@
-# Generic key=value patterns
-connection password=mysecretpassword
-password: mysecretvalue
-config token=abc123xyz
-secret: verysecretvalue

@@ -1,8 +1,0 @@
-# Telegram Bot Token
-123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi
-# Discord Bot Token
-MTIzNDU2Nzg5MDEyMzQ1Njc4.GAbCdE.abcdefghijklmnopqrstuvwxyz_1234
-# Discord Webhook
-https://discord.com/api/webhooks/123456789012345678/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-
-# Facebook Access Token
-EAABcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789

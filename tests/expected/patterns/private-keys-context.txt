@@ -1,3 +1,0 @@
-before
-[REDACTED:PRIVATE_KEY:multiline]
-after

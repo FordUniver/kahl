@@ -11,18 +11,18 @@ Two-layer detection:
 ## Streaming Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    STATE_NORMAL                          │
-│  - Redact line immediately, flush to stdout             │
-└────────────────────────┬────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    STATE_NORMAL                              │
+│  - Redact line immediately, flush to stdout                 │
+└────────────────────────┬────────────────────────────────────┘
                          │ See "-----BEGIN.*PRIVATE KEY-----"
                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                STATE_IN_PRIVATE_KEY                      │
-│  - Buffer lines (max 100)                               │
-│  - On END marker → emit [REDACTED:PRIVATE_KEY:multiline]│
-│  - On buffer overflow → flush each line redacted        │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                STATE_IN_PRIVATE_KEY                          │
+│  - Buffer lines (max 100)                                   │
+│  - On END marker → emit [REDACTED:PRIVATE_KEY:multiline]    │
+│  - On buffer overflow → flush each line redacted            │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Binary Handling
@@ -39,15 +39,21 @@ Structure-preserving labels:
 [REDACTED:PRIVATE_KEY:multiline]          # private key blocks
 ```
 
+## Building
+
+```bash
+./build.sh              # Build for current platform
+./build-all.sh          # Build with cross-compilation options
+```
+
+## Testing
+
+```bash
+./test.sh               # Run test suite
+```
+
 ## Known Limitations
 
 - **Backgrounded commands**: Wrapped as `( cmd | filter ) &` to maintain filtering
 - **Stdout redirections**: `cmd > file` writes to file, filter sees nothing (by design—secret not in conversation)
 - **stderr**: Filtered via wrapper (same process substitution as stdout)
-
-## Testing
-
-```bash
-cd tests && ./test.sh -q           # Run all tests (7 implementations × 78 tests)
-cd tests && ./test.sh -q python    # Run tests for specific implementation
-```

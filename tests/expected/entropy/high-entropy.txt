@@ -1,9 +1,0 @@
-# High entropy strings that should be redacted
-# Random hex (32 chars, 3.9 bits > 3.0 threshold)
-KEY=[REDACTED:HIGH_ENTROPY:hex:32:3.9]
-# Random alphanumeric (32 chars, 5.0 bits > 4.5 threshold)
-api_key: [REDACTED:HIGH_ENTROPY:alnum:32:5.0]
-# Random base64 (48 chars, 4.9 bits > 4.5 threshold)
-encoded=[REDACTED:HIGH_ENTROPY:alnum:48:4.8]
-# Long random string
-secret_value=[REDACTED:HIGH_ENTROPY:alnum:52:5.7]

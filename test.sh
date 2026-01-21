@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Test suite for kahl implementations
-# Tests Python, Perl, Go, Ruby, Rust, Bun, Swift versions
+# Test suite for kahl
 # allow-secrets - bypass kahl for test data
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -8,32 +7,23 @@ cd "$(dirname "$0")"
 # Clear CLAUDE_CODE_SHELL_PREFIX to avoid filtering test data
 unset CLAUDE_CODE_SHELL_PREFIX
 
-# Find implementations in build/
-declare -a IMPLS=()
-[[ -x build/kahl-python ]] && IMPLS+=(build/kahl-python)
-[[ -x build/kahl-perl ]] && IMPLS+=(build/kahl-perl)
-[[ -x build/kahl-go ]] && IMPLS+=(build/kahl-go)
-[[ -x build/kahl-ruby ]] && IMPLS+=(build/kahl-ruby)
-[[ -x build/kahl-rust ]] && IMPLS+=(build/kahl-rust)
-[[ -x build/kahl-bun ]] && IMPLS+=(build/kahl-bun)
-[[ -x build/kahl-swift ]] && IMPLS+=(build/kahl-swift)
-
-if [[ ${#IMPLS[@]} -eq 0 ]]; then
-    echo "No implementations found!"
+# Find kahl binary: prefer build/, fallback to target/release/
+KAHL=""
+if [[ -x build/kahl ]]; then
+    KAHL="build/kahl"
+elif [[ -x target/release/kahl ]]; then
+    KAHL="target/release/kahl"
+else
+    echo "No kahl binary found. Run './build.sh' first." >&2
     exit 1
 fi
 
-echo "Testing: ${IMPLS[*]}"
+echo "Testing: $KAHL"
 echo "========================================"
 echo
 
 PASS=0
 FAIL=0
-
-# Extract implementation name from path (e.g., build/kahl-python -> python)
-impl_name() {
-    basename "$1" | sed 's/^kahl-//'
-}
 
 # Test helper for CLI flags (no stdin)
 test_flag() {
@@ -42,20 +32,18 @@ test_flag() {
     local expect="$3"  # exact match expected
 
     echo "=== $name ==="
-    for impl in "${IMPLS[@]}"; do
-        local result
-        result=$(./"$impl" "$flag" 2>/dev/null) || result="[ERROR]"
+    local result
+    result=$(./"$KAHL" "$flag" 2>/dev/null) || result="[ERROR]"
 
-        if [[ "$result" == "$expect" ]]; then
-            printf "  %-25s pass\n" "$(impl_name "$impl"):"
-            ((PASS++)) || true
-        else
-            printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-            printf "    expected: %s\n" "$expect"
-            printf "    got:      %s\n" "$result"
-            ((FAIL++)) || true
-        fi
-    done
+    if [[ "$result" == "$expect" ]]; then
+        printf "  pass\n"
+        ((PASS++)) || true
+    else
+        printf "  FAIL\n"
+        printf "    expected: %s\n" "$expect"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
     echo
 }
 
@@ -66,32 +54,30 @@ test_flag_error() {
     local expect_stderr_pattern="$3"  # regex pattern for stderr (optional)
 
     echo "=== $name ==="
-    for impl in "${IMPLS[@]}"; do
-        local exit_code=0
-        local stderr_output
-        stderr_output=$(./"$impl" "$flag" 2>&1 >/dev/null) || exit_code=$?
+    local exit_code=0
+    local stderr_output
+    stderr_output=$(./"$KAHL" "$flag" 2>&1 >/dev/null) || exit_code=$?
 
-        if [[ $exit_code -ne 0 ]]; then
-            # Check stderr pattern if provided
-            if [[ -n "$expect_stderr_pattern" ]]; then
-                if echo "$stderr_output" | grep -qE "$expect_stderr_pattern"; then
-                    printf "  %-25s pass\n" "$(impl_name "$impl"):"
-                    ((PASS++)) || true
-                else
-                    printf "  %-25s FAIL (wrong error message)\n" "$(impl_name "$impl"):"
-                    printf "    expected pattern: %s\n" "$expect_stderr_pattern"
-                    printf "    got stderr:       %s\n" "$stderr_output"
-                    ((FAIL++)) || true
-                fi
-            else
-                printf "  %-25s pass\n" "$(impl_name "$impl"):"
+    if [[ $exit_code -ne 0 ]]; then
+        # Check stderr pattern if provided
+        if [[ -n "$expect_stderr_pattern" ]]; then
+            if echo "$stderr_output" | grep -qE "$expect_stderr_pattern"; then
+                printf "  pass\n"
                 ((PASS++)) || true
+            else
+                printf "  FAIL (wrong error message)\n"
+                printf "    expected pattern: %s\n" "$expect_stderr_pattern"
+                printf "    got stderr:       %s\n" "$stderr_output"
+                ((FAIL++)) || true
             fi
         else
-            printf "  %-25s FAIL (exit 0, should error)\n" "$(impl_name "$impl"):"
-            ((FAIL++)) || true
+            printf "  pass\n"
+            ((PASS++)) || true
         fi
-    done
+    else
+        printf "  FAIL (exit 0, should error)\n"
+        ((FAIL++)) || true
+    fi
     echo
 }
 
@@ -102,20 +88,18 @@ test_case() {
     local expect="$3"  # regex pattern to match
 
     echo "=== $name ==="
-    for impl in "${IMPLS[@]}"; do
-        local result
-        result=$(echo -n "$input" | ./"$impl" 2>/dev/null) || result="[ERROR]"
+    local result
+    result=$(echo -n "$input" | ./"$KAHL" 2>/dev/null) || result="[ERROR]"
 
-        if echo "$result" | grep -qE "$expect"; then
-            printf "  %-25s pass\n" "$(impl_name "$impl"):"
-            ((PASS++)) || true
-        else
-            printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-            printf "    expected: %s\n" "$expect"
-            printf "    got:      %s\n" "$result"
-            ((FAIL++)) || true
-        fi
-    done
+    if echo "$result" | grep -qE "$expect"; then
+        printf "  pass\n"
+        ((PASS++)) || true
+    else
+        printf "  FAIL\n"
+        printf "    expected: %s\n" "$expect"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
     echo
 }
 
@@ -126,20 +110,18 @@ test_exact() {
     local expect="$3"
 
     echo "=== $name ==="
-    for impl in "${IMPLS[@]}"; do
-        local result
-        result=$(echo -n "$input" | ./"$impl" 2>/dev/null) || result="[ERROR]"
+    local result
+    result=$(echo -n "$input" | ./"$KAHL" 2>/dev/null) || result="[ERROR]"
 
-        if [[ "$result" == "$expect" ]]; then
-            printf "  %-25s pass\n" "$(impl_name "$impl"):"
-            ((PASS++)) || true
-        else
-            printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-            printf "    expected: %s\n" "$expect"
-            printf "    got:      %s\n" "$result"
-            ((FAIL++)) || true
-        fi
-    done
+    if [[ "$result" == "$expect" ]]; then
+        printf "  pass\n"
+        ((PASS++)) || true
+    else
+        printf "  FAIL\n"
+        printf "    expected: %s\n" "$expect"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
     echo
 }
 
@@ -165,50 +147,43 @@ test_flag_error "Unknown flag with value" "--invalid=value" "nknown.*option|nkno
 #############################################
 
 # Test that both --filter=X and --filter X work
-# We'll test with a valid GitHub PAT (needs 36 chars after ghp_)
 echo "=== Filter flag with = (--filter=patterns) ==="
-for impl in "${IMPLS[@]}"; do
-    result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$impl" --filter=patterns 2>/dev/null) || result="[ERROR]"
-    if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
-        printf "  %-25s pass\n" "$(impl_name "$impl"):"
-        ((PASS++)) || true
-    else
-        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-        printf "    expected: redaction\n"
-        printf "    got:      %s\n" "$result"
-        ((FAIL++)) || true
-    fi
-done
+result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$KAHL" --filter=patterns 2>/dev/null) || result="[ERROR]"
+if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
+    printf "  pass\n"
+    ((PASS++)) || true
+else
+    printf "  FAIL\n"
+    printf "    expected: redaction\n"
+    printf "    got:      %s\n" "$result"
+    ((FAIL++)) || true
+fi
 echo
 
 echo "=== Filter flag with space (--filter patterns) ==="
-for impl in "${IMPLS[@]}"; do
-    result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$impl" --filter patterns 2>/dev/null) || result="[ERROR]"
-    if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
-        printf "  %-25s pass\n" "$(impl_name "$impl"):"
-        ((PASS++)) || true
-    else
-        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-        printf "    expected: redaction\n"
-        printf "    got:      %s\n" "$result"
-        ((FAIL++)) || true
-    fi
-done
+result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$KAHL" --filter patterns 2>/dev/null) || result="[ERROR]"
+if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
+    printf "  pass\n"
+    ((PASS++)) || true
+else
+    printf "  FAIL\n"
+    printf "    expected: redaction\n"
+    printf "    got:      %s\n" "$result"
+    ((FAIL++)) || true
+fi
 echo
 
 echo "=== Filter flag short form (-f patterns) ==="
-for impl in "${IMPLS[@]}"; do
-    result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$impl" -f patterns 2>/dev/null) || result="[ERROR]"
-    if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
-        printf "  %-25s pass\n" "$(impl_name "$impl"):"
-        ((PASS++)) || true
-    else
-        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-        printf "    expected: redaction\n"
-        printf "    got:      %s\n" "$result"
-        ((FAIL++)) || true
-    fi
-done
+result=$(echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | ./"$KAHL" -f patterns 2>/dev/null) || result="[ERROR]"
+if echo "$result" | grep -q '\[REDACTED:GITHUB_PAT:'; then
+    printf "  pass\n"
+    ((PASS++)) || true
+else
+    printf "  FAIL\n"
+    printf "    expected: redaction\n"
+    printf "    got:      %s\n" "$result"
+    ((FAIL++)) || true
+fi
 echo
 
 #############################################
@@ -385,17 +360,15 @@ test_case "Generic Private Key" \
 
 # Private key with surrounding text - check output preserves context
 echo "=== Private key with surrounding text ==="
-for impl in "${IMPLS[@]}"; do
-    result=$(printf '%s' $'before\n-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\nafter' | ./"$impl" 2>/dev/null) || result="[ERROR]"
-    if echo "$result" | grep -q 'before' && echo "$result" | grep -q '\[REDACTED:PRIVATE_KEY:multiline\]' && echo "$result" | grep -q 'after'; then
-        printf "  %-25s pass\n" "$(impl_name "$impl"):"
-        ((PASS++)) || true
-    else
-        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-        printf "    got: %s\n" "$result"
-        ((FAIL++)) || true
-    fi
-done
+result=$(printf '%s' $'before\n-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\nafter' | ./"$KAHL" 2>/dev/null) || result="[ERROR]"
+if echo "$result" | grep -q 'before' && echo "$result" | grep -q '\[REDACTED:PRIVATE_KEY:multiline\]' && echo "$result" | grep -q 'after'; then
+    printf "  pass\n"
+    ((PASS++)) || true
+else
+    printf "  FAIL\n"
+    printf "    got: %s\n" "$result"
+    ((FAIL++)) || true
+fi
 echo
 
 #############################################
@@ -451,35 +424,31 @@ test_exact "GitLab PAT 19 chars (too short)" \
 #############################################
 
 echo "=== Streaming: preserves newlines ==="
-for impl in "${IMPLS[@]}"; do
-    result=$(printf 'line1\nline2\nline3\n' | ./"$impl" 2>/dev/null) || result="[ERROR]"
-    expected=$'line1\nline2\nline3'
+result=$(printf 'line1\nline2\nline3\n' | ./"$KAHL" 2>/dev/null) || result="[ERROR]"
+expected=$'line1\nline2\nline3'
 
-    if [[ "$result" == "$expected" || "$result" == "$expected"$'\n' ]]; then
-        printf "  %-25s pass\n" "$(impl_name "$impl"):"
-        ((PASS++))
-    else
-        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-        printf "    expected 3 lines, got: %s\n" "$(echo "$result" | wc -l | tr -d ' ') lines"
-        ((FAIL++))
-    fi
-done
+if [[ "$result" == "$expected" || "$result" == "$expected"$'\n' ]]; then
+    printf "  pass\n"
+    ((PASS++))
+else
+    printf "  FAIL\n"
+    printf "    expected 3 lines, got: %s\n" "$(echo "$result" | wc -l | tr -d ' ') lines"
+    ((FAIL++))
+fi
 echo
 
 echo "=== Streaming: single line output ==="
-for impl in "${IMPLS[@]}"; do
-    result=$(echo "test line" | ./"$impl" 2>/dev/null) || result="[ERROR]"
+result=$(echo "test line" | ./"$KAHL" 2>/dev/null) || result="[ERROR]"
 
-    if [[ "$result" == "test line" ]]; then
-        printf "  %-25s pass\n" "$(impl_name "$impl"):"
-        ((PASS++))
-    else
-        printf "  %-25s FAIL\n" "$(impl_name "$impl"):"
-        printf "    expected: test line\n"
-        printf "    got:      %s\n" "$result"
-        ((FAIL++))
-    fi
-done
+if [[ "$result" == "test line" ]]; then
+    printf "  pass\n"
+    ((PASS++))
+else
+    printf "  FAIL\n"
+    printf "    expected: test line\n"
+    printf "    got:      %s\n" "$result"
+    ((FAIL++))
+fi
 echo
 
 #############################################

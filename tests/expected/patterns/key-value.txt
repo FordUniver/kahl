@@ -1,5 +1,0 @@
-# Generic key=value patterns
-connection password=[REDACTED:PASSWORD_VALUE:16A]
-password:[REDACTED:PASSWORD_VALUE:14X]
-config token=[REDACTED:TOKEN_VALUE:9X]
-secret:[REDACTED:SECRET_VALUE:16X]

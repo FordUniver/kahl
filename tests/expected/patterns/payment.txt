@@ -1,3 +1,0 @@
-# Payment provider patterns
-[REDACTED:STRIPE_SECRET:sk_4A_24A]
-[REDACTED:STRIPE_TEST:sk_4A_24A]

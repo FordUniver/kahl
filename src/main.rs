@@ -9,7 +9,7 @@
 //
 // Default: values + patterns enabled, entropy disabled. CLI overrides ENV entirely.
 
-const VERSION: &str = include_str!("../../VERSION");
+const VERSION: &str = include_str!("../VERSION");
 
 mod patterns_gen;
 use patterns_gen::*;

@@ -1,2 +1,0 @@
-# Multiple secrets on same line
-ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789 and glpat-abcdefghij1234567890

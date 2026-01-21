@@ -1,3 +1,0 @@
-# netrc/authinfo patterns
-machine github.com login user password [REDACTED:NETRC_PASSWORD:14X]
-machine gitlab.com login admin passwd [REDACTED:NETRC_PASSWORD:15X]

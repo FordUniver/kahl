@@ -1,2 +1,0 @@
-# Azure Storage Account Key (context pattern - exactly 88 chars + ==)
-AccountKey=[REDACTED:AZURE_STORAGE_KEY:90chars]

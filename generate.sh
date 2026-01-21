@@ -9,7 +9,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATTERNS_DIR="$SCRIPT_DIR/../patterns"
+PATTERNS_DIR="$SCRIPT_DIR/patterns"
 OUTPUT="$SCRIPT_DIR/src/patterns_gen.rs"
 
 # Check dependencies
