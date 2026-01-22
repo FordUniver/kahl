@@ -2,15 +2,15 @@
 #
 # Pipeline structure:
 #
-#   build ──────────────→ test:integration ──→ test:integration:verbose (on failure)
-#     │                          │
-#     │    test:unit ────────────┼──→ test:unit:verbose (on failure)
-#     │         │                │
-#     │    lint:fmt ─────────────┤
-#     │         │                │
-#     │    lint:clippy ──────────┘
+#   build ──→ test:integration
+#     │              │
+#     │    test:unit─┤
+#     │         │    │
+#     │    lint:fmt──┤
+#     │         │    │
+#     │    lint:clippy
 #     │
-#     └──→ release (tags only)
+#     └──→ release (tags only, binaries built locally)
 
 stages:
   - build
@@ -68,7 +68,7 @@ test:unit:
     - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
   script:
     - ./prebuild.sh
-    - cargo test
+    - cargo test -- --nocapture
   cache:
     key: cargo-test-unit-${CI_COMMIT_REF_SLUG}
     paths:
@@ -119,25 +119,13 @@ lint:clippy:
     - if: $CI_PIPELINE_SOURCE == "push"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-test:unit:verbose:
-  stage: test
-  needs: [test:unit]
-  when: on_failure
-  image: rust:${RUST_VERSION}-slim
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq wget
-    - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
-  script:
-    - ./prebuild.sh
-    - cargo test -- --nocapture
-
 test:integration:
   stage: test
   needs: [build]
   image: debian:bookworm-slim
   script:
     - ./build/kahl --version
-    - ./test.sh
+    - ./test.sh -v
   artifacts:
     when: on_failure
     paths:
@@ -148,19 +136,6 @@ test:integration:
       when: never
     - if: $CI_PIPELINE_SOURCE == "push"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-
-test:integration:verbose:
-  stage: test
-  needs: [build, test:integration]
-  when: on_failure
-  image: debian:bookworm-slim
-  script:
-    - ./test.sh -v
-  artifacts:
-    when: always
-    paths:
-      - tests/*.log
-    expire_in: 1 week
 
 # ====================================================================================
 # Release Stage (tags only, binaries built locally)
