@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Generate patterns_gen.rs from YAML pattern definitions
-# Despite the .rs extension, this is a bash script that generates Rust code.
-# The .rs extension clarifies its purpose (generating Rust patterns).
+# Prebuild: generate patterns_gen.rs from YAML pattern definitions
 #
-# Usage: ./generate.rs
+# Usage: ./prebuild.sh
 # Output: src/patterns_gen.rs
 
 set -euo pipefail
