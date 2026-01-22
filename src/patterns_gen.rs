@@ -36,7 +36,10 @@ pub const PATTERNS: &[(&str, &str)] = &[
     (r"SG\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "SENDGRID_KEY"),
     (r"npm_[A-Za-z0-9]{36}", "NPM_TOKEN"),
     (r"pypi-[A-Za-z0-9_-]{100,}", "PYPI_TOKEN"),
-    (r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "JWT_TOKEN"),
+    (
+        r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+        "JWT_TOKEN",
+    ),
     (r"dop_v1_[a-f0-9]{64}", "DIGITALOCEAN_PAT"),
     (r"doo_v1_[a-f0-9]{64}", "DIGITALOCEAN_OAUTH"),
     (r"dor_v1_[a-f0-9]{64}", "DIGITALOCEAN_REFRESH"),
@@ -46,7 +49,10 @@ pub const PATTERNS: &[(&str, &str)] = &[
     (r"sb_publishable_[A-Za-z0-9_-]{20,}", "SUPABASE_PUBLISHABLE"),
     (r"sb_secret_[A-Za-z0-9_-]{20,}", "SUPABASE_SECRET"),
     (r"pscale_tkn_[A-Za-z0-9_-]{30,}", "PLANETSCALE_TOKEN"),
-    (r"[A-Za-z0-9]{9}\.atlasv1\.[A-Za-z0-9]{40,}", "TERRAFORM_CLOUD_TOKEN"),
+    (
+        r"[A-Za-z0-9]{9}\.atlasv1\.[A-Za-z0-9]{40,}",
+        "TERRAFORM_CLOUD_TOKEN",
+    ),
     (r"hvs\.[A-Za-z0-9]{24,}", "VAULT_SERVICE_TOKEN"),
     (r"hvb\.[A-Za-z0-9]{24,}", "VAULT_BATCH_TOKEN"),
     (r"hvr\.[A-Za-z0-9]{24,}", "VAULT_RECOVERY_TOKEN"),
@@ -57,8 +63,14 @@ pub const PATTERNS: &[(&str, &str)] = &[
     (r"lin_api_[A-Za-z0-9]{40,}", "LINEAR_API_KEY"),
     (r"dp\.pt\.[A-Za-z0-9]{40,}", "DOPPLER_TOKEN"),
     (r"[0-9]{9,10}:[A-Za-z0-9_-]{35,}", "TELEGRAM_BOT_TOKEN"),
-    (r"[MN][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}", "DISCORD_BOT_TOKEN"),
-    (r"https://discord\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+", "DISCORD_WEBHOOK"),
+    (
+        r"[MN][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}",
+        "DISCORD_BOT_TOKEN",
+    ),
+    (
+        r"https://discord\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+",
+        "DISCORD_WEBHOOK",
+    ),
     (r"EAA[A-Za-z0-9]{50,}", "FACEBOOK_ACCESS_TOKEN"),
 ];
 
@@ -74,7 +86,11 @@ pub const CONTEXT_PATTERNS: &[(&str, &str, usize)] = &[
     (r#"(secret:)(\s*[^\s,;"'\}\[\]]+)"#, "SECRET_VALUE", 2),
     (r#"(token=)([^\s,;"'\}\[\]]+)"#, "TOKEN_VALUE", 2),
     (r#"(token:)(\s*[^\s,;"'\}\[\]]+)"#, "TOKEN_VALUE", 2),
-    (r"(AccountKey=)([A-Za-z0-9+/]{88}==)", "AZURE_STORAGE_KEY", 2),
+    (
+        r"(AccountKey=)([A-Za-z0-9+/]{88}==)",
+        "AZURE_STORAGE_KEY",
+        2,
+    ),
     (r#"(Password=)([^\s,;"'\}\[\]]+)"#, "PASSWORD_VALUE", 2),
     (r#"(Password:)(\s*[^\s,;"'\}\[\]]+)"#, "PASSWORD_VALUE", 2),
     (r#"(Secret=)([^\s,;"'\}\[\]]+)"#, "SECRET_VALUE", 2),
@@ -216,13 +232,17 @@ pub const ENTROPY_EXCLUSIONS: &[EntropyExclusion] = &[
         pattern: r"[a-f0-9]{40}",
         label: "GIT_SHA",
         case_insensitive: false,
-        context_keywords: Some(&["commit", "sha", "hash", "ref", "oid", "blob", "tree", "parent", "HEAD", "merge"]),
+        context_keywords: Some(&[
+            "commit", "sha", "hash", "ref", "oid", "blob", "tree", "parent", "HEAD", "merge",
+        ]),
     },
     EntropyExclusion {
         pattern: r"[a-f0-9]{64}",
         label: "SHA256_HASH",
         case_insensitive: false,
-        context_keywords: Some(&["sha256", "image", "docker", "digest", "hash", "checksum", "layer"]),
+        context_keywords: Some(&[
+            "sha256", "image", "docker", "digest", "hash", "checksum", "layer",
+        ]),
     },
     EntropyExclusion {
         pattern: r"[a-f0-9]{32}",
@@ -246,23 +266,6 @@ pub const ENTROPY_EXCLUSIONS: &[EntropyExclusion] = &[
 
 /// Global context keywords for entropy detection
 pub const ENTROPY_CONTEXT_KEYWORDS: &[&str] = &[
-    "commit",
-    "sha",
-    "hash",
-    "checksum",
-    "etag",
-    "image",
-    "docker",
-    "uuid",
-    "guid",
-    "ref",
-    "oid",
-    "blob",
-    "tree",
-    "digest",
-    "layer",
-    "revision",
-    "version",
-    "build",
-    "id",
+    "commit", "sha", "hash", "checksum", "etag", "image", "docker", "uuid", "guid", "ref", "oid",
+    "blob", "tree", "digest", "layer", "revision", "version", "build", "id",
 ];

@@ -101,11 +101,9 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
         if args[i].starts_with("--filter=") {
             cli_filter = Some(args[i].strip_prefix("--filter=").unwrap().to_string());
             break;
-        } else if args[i] == "-f" || args[i] == "--filter" {
-            if i + 1 < args.len() {
-                cli_filter = Some(args[i + 1].clone());
-                break;
-            }
+        } else if (args[i] == "-f" || args[i] == "--filter") && i + 1 < args.len() {
+            cli_filter = Some(args[i + 1].clone());
+            break;
         }
         i += 1;
     }
@@ -150,7 +148,11 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
             return Err("secrets-filter: no valid filters specified".to_string());
         }
 
-        Ok(FilterConfig { values, patterns, entropy })
+        Ok(FilterConfig {
+            values,
+            patterns,
+            entropy,
+        })
     } else {
         // Use ENV variables
         let values = env::var("SECRETS_FILTER_VALUES")
@@ -166,7 +168,11 @@ fn parse_filter_config() -> Result<FilterConfig, String> {
             .map(|v| is_truthy(&v))
             .unwrap_or(ENTROPY_ENABLED_DEFAULT);
 
-        Ok(FilterConfig { values, patterns, entropy })
+        Ok(FilterConfig {
+            values,
+            patterns,
+            entropy,
+        })
     }
 }
 
@@ -249,7 +255,8 @@ fn describe_structure(s: &str) -> String {
                 let first = parts[0];
                 let is_alpha = first.chars().all(|c| c.is_ascii_alphabetic());
                 if is_alpha && first.len() <= 12 {
-                    let segments: Vec<String> = parts[1..].iter().map(|p| classify_segment(p)).collect();
+                    let segments: Vec<String> =
+                        parts[1..].iter().map(|p| classify_segment(p)).collect();
                     return format!("{}{}{}", first, sep, segments.join(sep));
                 }
                 let segments: Vec<String> = parts.iter().map(|p| classify_segment(p)).collect();
@@ -313,45 +320,72 @@ fn build_special_patterns() -> SpecialPatterns {
     }
 }
 
-fn redact_patterns(text: &str, patterns: &[Pattern], context_patterns: &[ContextPattern], special: &SpecialPatterns) -> String {
+fn redact_patterns(
+    text: &str,
+    patterns: &[Pattern],
+    context_patterns: &[ContextPattern],
+    special: &SpecialPatterns,
+) -> String {
     let mut result = text.to_string();
 
     // Direct patterns
     for p in patterns {
-        result = p.regex.replace_all(&result, |caps: &regex::Captures| {
-            let matched = caps.get(0).unwrap().as_str();
-            let structure = describe_structure(matched);
-            format!("[REDACTED:{}:{}]", p.label, structure)
-        }).to_string();
+        result = p
+            .regex
+            .replace_all(&result, |caps: &regex::Captures| {
+                let matched = caps.get(0).unwrap().as_str();
+                let structure = describe_structure(matched);
+                format!("[REDACTED:{}:{}]", p.label, structure)
+            })
+            .to_string();
     }
 
     // Context patterns (simulate lookbehind)
     for cp in context_patterns {
-        result = cp.regex.replace_all(&result, |caps: &regex::Captures| {
-            let prefix = caps.get(1).map_or("", |m| m.as_str());
-            let secret = caps.get(cp.group).map_or("", |m| m.as_str());
-            let structure = describe_structure(secret);
-            format!("{}[REDACTED:{}:{}]", prefix, cp.label, structure)
-        }).to_string();
+        result = cp
+            .regex
+            .replace_all(&result, |caps: &regex::Captures| {
+                let prefix = caps.get(1).map_or("", |m| m.as_str());
+                let secret = caps.get(cp.group).map_or("", |m| m.as_str());
+                let structure = describe_structure(secret);
+                format!("{}[REDACTED:{}:{}]", prefix, cp.label, structure)
+            })
+            .to_string();
     }
 
     // Git credential URLs: ://user:password@ -> ://user:[REDACTED]@
-    result = special.git_credential.replace_all(&result, |caps: &regex::Captures| {
-        let prefix = caps.get(1).map_or("", |m| m.as_str());
-        let password = caps.get(GIT_CREDENTIAL_PATTERN.secret_group).map_or("", |m| m.as_str());
-        let suffix = caps.get(3).map_or("", |m| m.as_str());
-        let structure = describe_structure(password);
-        format!("{}[REDACTED:{}:{}]{}", prefix, GIT_CREDENTIAL_PATTERN.label, structure, suffix)
-    }).to_string();
+    result = special
+        .git_credential
+        .replace_all(&result, |caps: &regex::Captures| {
+            let prefix = caps.get(1).map_or("", |m| m.as_str());
+            let password = caps
+                .get(GIT_CREDENTIAL_PATTERN.secret_group)
+                .map_or("", |m| m.as_str());
+            let suffix = caps.get(3).map_or("", |m| m.as_str());
+            let structure = describe_structure(password);
+            format!(
+                "{}[REDACTED:{}:{}]{}",
+                prefix, GIT_CREDENTIAL_PATTERN.label, structure, suffix
+            )
+        })
+        .to_string();
 
     // Docker config auth: "auth": "base64" -> "auth": "[REDACTED]"
-    result = special.docker_auth.replace_all(&result, |caps: &regex::Captures| {
-        let prefix = caps.get(1).map_or("", |m| m.as_str());
-        let auth = caps.get(DOCKER_AUTH_PATTERN.secret_group).map_or("", |m| m.as_str());
-        let suffix = caps.get(3).map_or("", |m| m.as_str());
-        let structure = describe_structure(auth);
-        format!("{}[REDACTED:{}:{}]{}", prefix, DOCKER_AUTH_PATTERN.label, structure, suffix)
-    }).to_string();
+    result = special
+        .docker_auth
+        .replace_all(&result, |caps: &regex::Captures| {
+            let prefix = caps.get(1).map_or("", |m| m.as_str());
+            let auth = caps
+                .get(DOCKER_AUTH_PATTERN.secret_group)
+                .map_or("", |m| m.as_str());
+            let suffix = caps.get(3).map_or("", |m| m.as_str());
+            let structure = describe_structure(auth);
+            format!(
+                "{}[REDACTED:{}:{}]{}",
+                prefix, DOCKER_AUTH_PATTERN.label, structure, suffix
+            )
+        })
+        .to_string();
 
     result
 }
@@ -446,7 +480,8 @@ fn shannon_entropy(s: &str) -> f64 {
 /// Character set definitions
 const CHARSET_HEX: &str = "0123456789abcdef";
 const CHARSET_BASE64: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-const CHARSET_ALPHANUMERIC: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+const CHARSET_ALPHANUMERIC: &str =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 
 /// Classify a string's character set
 /// Returns: "hex", "base64", "alphanumeric", or "mixed"
@@ -534,7 +569,7 @@ fn has_context_keyword(text: &str, pos: usize, keywords: &[&str]) -> bool {
         return false;
     }
 
-    let start = if pos > 50 { pos - 50 } else { 0 };
+    let start = pos.saturating_sub(50);
     let prefix = text[start..pos].to_lowercase();
 
     for kw in keywords {
@@ -548,7 +583,12 @@ fn has_context_keyword(text: &str, pos: usize, keywords: &[&str]) -> bool {
 
 /// Check if token matches an exclusion pattern
 /// Returns: Some(label) if excluded, None otherwise
-fn matches_exclusion(token: &str, text: &str, pos: usize, exclusion_regexes: &[(Regex, &EntropyExclusion)]) -> Option<&'static str> {
+fn matches_exclusion(
+    token: &str,
+    text: &str,
+    pos: usize,
+    exclusion_regexes: &[(Regex, &EntropyExclusion)],
+) -> Option<&'static str> {
     for (regex, excl) in exclusion_regexes {
         if regex.is_match(token) {
             // Check context keywords if present
@@ -600,7 +640,12 @@ fn build_exclusion_regexes() -> Vec<(Regex, &'static EntropyExclusion)> {
 }
 
 /// Detect and redact high-entropy strings
-fn redact_entropy(text: &str, config: &EntropyConfig, exclusion_regexes: &[(Regex, &EntropyExclusion)], token_delim_re: &Regex) -> String {
+fn redact_entropy(
+    text: &str,
+    config: &EntropyConfig,
+    exclusion_regexes: &[(Regex, &EntropyExclusion)],
+    token_delim_re: &Regex,
+) -> String {
     let tokens = extract_tokens(text, config.min_length, config.max_length, token_delim_re);
 
     // Collect replacements (process in reverse order to preserve positions)
@@ -640,6 +685,7 @@ fn redact_entropy(text: &str, config: &EntropyConfig, exclusion_regexes: &[(Rege
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn redact_line(
     line: &str,
     secrets: &HashMap<String, String>,
@@ -668,6 +714,7 @@ fn redact_line(
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn flush_buffer_redacted(
     buffer: &[String],
     secrets: &HashMap<String, String>,
@@ -682,7 +729,21 @@ fn flush_buffer_redacted(
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     for line in buffer {
-        let _ = write!(handle, "{}", redact_line(line, secrets, patterns, context_patterns, special_patterns, config, entropy_config, exclusion_regexes, token_delim_re));
+        let _ = write!(
+            handle,
+            "{}",
+            redact_line(
+                line,
+                secrets,
+                patterns,
+                context_patterns,
+                special_patterns,
+                config,
+                entropy_config,
+                exclusion_regexes,
+                token_delim_re
+            )
+        );
     }
     let _ = handle.flush();
 }
@@ -772,7 +833,17 @@ fn main() {
 
         // Binary detection: null byte (check raw bytes before UTF-8 conversion)
         if line_buf.contains(&0) {
-            flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
+            flush_buffer_redacted(
+                &buffer,
+                &secrets,
+                &patterns,
+                &context_patterns,
+                &special_patterns,
+                &config,
+                entropy_config.as_ref(),
+                &exclusion_regexes,
+                token_delim_re.as_ref(),
+            );
             buffer.clear();
             // Passthrough this line and rest as raw bytes
             let _ = stdout_handle.write_all(&line_buf);
@@ -796,7 +867,21 @@ fn main() {
                     state = STATE_IN_PRIVATE_KEY;
                     buffer = vec![line];
                 } else {
-                    let _ = write!(stdout_handle, "{}", redact_line(&line, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref()));
+                    let _ = write!(
+                        stdout_handle,
+                        "{}",
+                        redact_line(
+                            &line,
+                            &secrets,
+                            &patterns,
+                            &context_patterns,
+                            &special_patterns,
+                            &config,
+                            entropy_config.as_ref(),
+                            &exclusion_regexes,
+                            token_delim_re.as_ref()
+                        )
+                    );
                     let _ = stdout_handle.flush();
                 }
             }
@@ -845,6 +930,16 @@ fn main() {
         // Already emitted overflow redaction, nothing to do
     } else if !buffer.is_empty() {
         // Flush any remaining buffered content
-        flush_buffer_redacted(&buffer, &secrets, &patterns, &context_patterns, &special_patterns, &config, entropy_config.as_ref(), &exclusion_regexes, token_delim_re.as_ref());
+        flush_buffer_redacted(
+            &buffer,
+            &secrets,
+            &patterns,
+            &context_patterns,
+            &special_patterns,
+            &config,
+            entropy_config.as_ref(),
+            &exclusion_regexes,
+            token_delim_re.as_ref(),
+        );
     }
 }

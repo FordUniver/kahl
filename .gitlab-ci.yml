@@ -1,32 +1,178 @@
-# GitLab CI for kahl
-# Rust-only implementation
+# GitLab CI/CD pipeline for kahl CLI (Rust)
+#
+# Pipeline structure:
+#
+#   build ──────────────→ test:integration ──→ test:integration:verbose (on failure)
+#     │                          │
+#     │    test:unit ────────────┼──→ test:unit:verbose (on failure)
+#     │         │                │
+#     │    lint:fmt ─────────────┤
+#     │         │                │
+#     │    lint:clippy ──────────┘
+#     │
+#     └──→ release (tags only)
 
 stages:
+  - build
   - test
+  - release
 
 variables:
+  GIT_DEPTH: 1
+  RUST_VERSION: "1.83"
+  CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
   # Disable secrets filter in CI (testing secrets filter itself)
   CLAUDE_CODE_SHELL_PREFIX: ""
 
-test:
-  stage: test
-  image: rust:1.83-slim
+# ====================================================================================
+# Build Stage
+# ====================================================================================
+
+build:
+  stage: build
+  image: rust:${RUST_VERSION}-slim
   before_script:
     - apt-get update -qq && apt-get install -y -qq wget
     # Install yq for YAML parsing (used by generate.sh)
-    - |
-      YQ_VERSION="v4.50.1"
-      YQ_BINARY="yq_linux_amd64"
-      wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}" -O /usr/local/bin/yq
-      chmod +x /usr/local/bin/yq
-    - mkdir -p build
+    - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
   script:
     - ./generate.sh
-    - cargo build --release --quiet
-    - cp target/release/kahl build/kahl
+    - cargo build --release
+    - mkdir -p build && cp target/release/kahl build/kahl
+    - ./build/kahl --version
+  artifacts:
+    paths:
+      - build/kahl
+    expire_in: 1 day
+  cache:
+    key: cargo-build-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cargo/registry
+      - .cargo/git
+      - target
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: never  # Tag releases handled separately
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# ====================================================================================
+# Test Stage
+# ====================================================================================
+
+test:unit:
+  stage: test
+  image: rust:${RUST_VERSION}-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq wget
+    - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+  script:
+    - ./generate.sh
+    - cargo test
+  cache:
+    key: cargo-test-unit-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cargo/registry
+      - .cargo/git
+      - target
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+lint:fmt:
+  stage: test
+  image: rust:${RUST_VERSION}-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq wget
+    - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+  script:
+    - ./generate.sh
+    - rustup component add rustfmt
+    - cargo fmt --check
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+lint:clippy:
+  stage: test
+  image: rust:${RUST_VERSION}-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq wget
+    - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+  script:
+    - ./generate.sh
+    - rustup component add clippy
+    - cargo clippy --all-targets -- -D warnings
+  cache:
+    key: cargo-clippy-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cargo/registry
+      - .cargo/git
+      - target
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+test:unit:verbose:
+  stage: test
+  needs: [test:unit]
+  when: on_failure
+  image: rust:${RUST_VERSION}-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq wget
+    - wget -q "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+  script:
+    - ./generate.sh
+    - cargo test -- --nocapture
+
+test:integration:
+  stage: test
+  needs: [build]
+  image: rust:${RUST_VERSION}-slim
+  script:
+    - ./build/kahl --version
     - ./test.sh
   artifacts:
     when: on_failure
     paths:
       - tests/*.log
     expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+test:integration:verbose:
+  stage: test
+  needs: [build, test:integration]
+  when: on_failure
+  image: rust:${RUST_VERSION}-slim
+  script:
+    - ./test.sh -v
+  artifacts:
+    when: always
+    paths:
+      - tests/*.log
+    expire_in: 1 week
+
+# ====================================================================================
+# Release Stage (tags only, binaries built locally)
+# ====================================================================================
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "Creating release for $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: "Release $CI_COMMIT_TAG"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
