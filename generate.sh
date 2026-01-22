@@ -267,4 +267,9 @@ EOF
 # Generate output
 generate > "$OUTPUT"
 
+# Format the generated file (if rustfmt is available)
+if command -v rustfmt >/dev/null 2>&1; then
+    rustfmt "$OUTPUT" 2>/dev/null || true
+fi
+
 echo "Generated $OUTPUT (hash: $patterns_hash)"
