@@ -129,10 +129,9 @@ test_exact() {
 # Version Flag
 #############################################
 
-# Get version from the binary itself
-EXPECTED_VERSION=$($KAHL_BIN --version)
-test_flag "Version flag (--version)" "--version" "$EXPECTED_VERSION"
-test_flag "Version flag (-v)" "-v" "$EXPECTED_VERSION"
+# Test version flags output valid semver-like format
+test_flag "Version flag (--version)" "--version" "^[0-9]+\.[0-9]+\.[0-9]+"
+test_flag "Version flag (-v)" "-v" "^[0-9]+\.[0-9]+\.[0-9]+"
 
 #############################################
 # Unknown Flag Rejection
