@@ -35,7 +35,7 @@ variables:
     - target
 
 .default_rust_job: &default_rust_job
-  image: rust:${RUST_VERSION}-${DEBIAN_VERSION}-slim
+  image: rust:${RUST_VERSION}-slim-${DEBIAN_VERSION}
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq bash git ca-certificates curl jq build-essential pkg-config libssl-dev cmake
