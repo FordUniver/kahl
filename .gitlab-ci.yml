@@ -15,8 +15,9 @@ stages:
 
 variables:
   GIT_DEPTH: 1
-  GIT_FETCH_EXTRA_FLAGS: --tags --prune --prune-tags
+  GIT_FETCH_EXTRA_FLAGS: --tags
   RUST_VERSION: "1.93"
+  DEBIAN_VERSION: "bookworm"
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
   YQ_VERSION: "4.44.3"
   # Disable secrets filter in CI (some tools test redaction output)
@@ -34,10 +35,11 @@ variables:
     - target
 
 .default_rust_job: &default_rust_job
-  image: rust:${RUST_VERSION}-slim
+  image: rust:${RUST_VERSION}-${DEBIAN_VERSION}-slim
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq bash git ca-certificates curl jq build-essential pkg-config libssl-dev cmake
+    - rustup component add rustfmt
     - |
       if [ -x ./prebuild.sh ]; then
         curl -sL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq
@@ -74,7 +76,6 @@ lint:fmt:
   stage: test
   <<: *default_rust_job
   script:
-    - rustup component add rustfmt
     - cargo fmt --check
   rules: *rules_common
 
@@ -92,7 +93,7 @@ lint:clippy:
 test:integration:
   stage: test
   needs: [build]
-  image: debian:bookworm-slim
+  image: debian:${DEBIAN_VERSION}-slim
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq bash git git-lfs jq curl ca-certificates gawk
