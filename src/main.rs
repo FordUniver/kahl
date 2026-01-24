@@ -421,36 +421,36 @@ fn get_entropy_config() -> EntropyConfig {
     let mut config = EntropyConfig::default();
 
     // Global threshold override
-    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_THRESHOLD") {
-        if let Ok(t) = val.parse::<f64>() {
-            config.threshold_hex = t;
-            config.threshold_base64 = t;
-            config.threshold_alphanumeric = t;
-        }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_THRESHOLD")
+        && let Ok(t) = val.parse::<f64>()
+    {
+        config.threshold_hex = t;
+        config.threshold_base64 = t;
+        config.threshold_alphanumeric = t;
     }
 
     // Per-charset overrides
-    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_HEX") {
-        if let Ok(t) = val.parse::<f64>() {
-            config.threshold_hex = t;
-        }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_HEX")
+        && let Ok(t) = val.parse::<f64>()
+    {
+        config.threshold_hex = t;
     }
-    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_BASE64") {
-        if let Ok(t) = val.parse::<f64>() {
-            config.threshold_base64 = t;
-        }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_BASE64")
+        && let Ok(t) = val.parse::<f64>()
+    {
+        config.threshold_base64 = t;
     }
 
     // Length overrides
-    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_MIN_LEN") {
-        if let Ok(l) = val.parse::<usize>() {
-            config.min_length = l;
-        }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_MIN_LEN")
+        && let Ok(l) = val.parse::<usize>()
+    {
+        config.min_length = l;
     }
-    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_MAX_LEN") {
-        if let Ok(l) = val.parse::<usize>() {
-            config.max_length = l;
-        }
+    if let Ok(val) = env::var("SECRETS_FILTER_ENTROPY_MAX_LEN")
+        && let Ok(l) = val.parse::<usize>()
+    {
+        config.max_length = l;
     }
 
     config
@@ -704,12 +704,11 @@ fn redact_line(
     if config.patterns {
         result = redact_patterns(&result, patterns, context_patterns, special_patterns);
     }
-    if config.entropy {
-        if let Some(ec) = entropy_config {
-            if let Some(delim) = token_delim_re {
-                result = redact_entropy(&result, ec, exclusion_regexes, delim);
-            }
-        }
+    if config.entropy
+        && let Some(ec) = entropy_config
+        && let Some(delim) = token_delim_re
+    {
+        result = redact_entropy(&result, ec, exclusion_regexes, delim);
     }
     result
 }
