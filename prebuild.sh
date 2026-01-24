@@ -13,25 +13,6 @@ OUTPUT="$SCRIPT_DIR/src/patterns_gen.rs"
 # Check dependencies
 command -v yq >/dev/null 2>&1 || { echo "Error: yq is required" >&2; exit 1; }
 
-# Generate VERSION file from:
-# 1. RELEASE_VERSION env var (set by release script)
-# 2. git describe with proper semver tags (vX.Y.Z, not vX.Y.Z-suffix)
-# 3. 0.0.0-g<hash> for repos without semver tags
-# 4. Existing VERSION file (fallback)
-VERSION_FILE="$SCRIPT_DIR/VERSION"
-if [[ -n "${RELEASE_VERSION:-}" ]]; then
-    echo "$RELEASE_VERSION" > "$VERSION_FILE"
-elif version=$(git -C "$SCRIPT_DIR" describe --tags --match 'v[0-9]*' --exclude '*-*' --always 2>/dev/null); then
-    if [[ "$version" == v* ]]; then
-        # Has semver tag: v0.1.0-3-gabcdef -> 0.1.0-3-gabcdef
-        echo "${version#v}" > "$VERSION_FILE"
-    else
-        # Just commit hash: use 0.0.0-g<hash>
-        echo "0.0.0-g$version" > "$VERSION_FILE"
-    fi
-fi
-# else: keep existing VERSION file
-
 # Compute source hash for tracking (portable: sha256sum on Linux, shasum on macOS)
 if command -v sha256sum >/dev/null 2>&1; then
     patterns_hash=$(cat "$PATTERNS_DIR/patterns.yaml" "$PATTERNS_DIR/env.yaml" "$PATTERNS_DIR/entropy.yaml" 2>/dev/null | sha256sum | cut -c1-12)
