@@ -11,3 +11,4 @@ src/patterns_gen.rs
 # Test artifacts
 tests/*.log
 tests/tmp/
+VERSION
