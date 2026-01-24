@@ -1,9 +1,9 @@
 [package]
 name = "kahl"
-version = "0.1.0"
-edition = "2021"
+version = "0.0.0"  # Actual version from git describe via build.rs
+edition = "2024"
 description = "Stream filter for secret redaction"
-repository = "https://git.zib.de/cspiegel/kahl"
+repository = "https://git.zib.de/tools/kahl"
 license = "GPL-3.0-or-later"
 keywords = ["security", "secrets", "filter", "redaction", "cli"]
 categories = ["command-line-utilities"]
@@ -16,6 +16,7 @@ regex = { version = "1", default-features = false, features = ["std", "perf", "u
 tools-release = true
 
 [profile.release]
+opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
