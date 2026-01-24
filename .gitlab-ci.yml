@@ -58,7 +58,7 @@ build:
       - target/release/${CI_PROJECT_NAME}
     expire_in: 1 day
   cache:
-    key: cargo-build-${CI_COMMIT_REF_SLUG}
+    key: cargo-build-${DEBIAN_VERSION}-${CI_COMMIT_REF_SLUG}
     <<: *cache_common
   rules: *rules_common
 
@@ -68,7 +68,7 @@ test:unit:
   script:
     - cargo test --locked -- --nocapture
   cache:
-    key: cargo-test-${CI_COMMIT_REF_SLUG}
+    key: cargo-test-${DEBIAN_VERSION}-${CI_COMMIT_REF_SLUG}
     <<: *cache_common
   rules: *rules_common
 
@@ -86,7 +86,7 @@ lint:clippy:
     - rustup component add clippy
     - cargo clippy --locked --all-targets -- -D warnings
   cache:
-    key: cargo-clippy-${CI_COMMIT_REF_SLUG}
+    key: cargo-clippy-${DEBIAN_VERSION}-${CI_COMMIT_REF_SLUG}
     <<: *cache_common
   rules: *rules_common
 
