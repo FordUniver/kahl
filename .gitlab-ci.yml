@@ -19,7 +19,7 @@ stages:
 
 variables:
   GIT_DEPTH: 1
-  RUST_VERSION: "1.83"
+  RUST_VERSION: "1.93"
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
   # Disable secrets filter in CI (testing secrets filter itself)
   CLAUDE_CODE_SHELL_PREFIX: ""
