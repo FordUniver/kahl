@@ -129,8 +129,8 @@ test_exact() {
 # Version Flag
 #############################################
 
-# Read expected version from VERSION file
-EXPECTED_VERSION=$(cat VERSION)
+# Get version from the binary itself
+EXPECTED_VERSION=$($KAHL_BIN --version)
 test_flag "Version flag (--version)" "--version" "$EXPECTED_VERSION"
 test_flag "Version flag (-v)" "-v" "$EXPECTED_VERSION"
 
