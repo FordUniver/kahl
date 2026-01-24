@@ -15,7 +15,7 @@ stages:
 
 variables:
   GIT_DEPTH: 1
-  GIT_FETCH_EXTRA_FLAGS: --tags
+  GIT_FETCH_EXTRA_FLAGS: --tags --force
   RUST_VERSION: "1.93"
   DEBIAN_VERSION: "bookworm"
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
