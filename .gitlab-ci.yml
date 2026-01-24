@@ -19,6 +19,7 @@ stages:
 
 variables:
   GIT_DEPTH: 1
+  GIT_FETCH_EXTRA_FLAGS: --tags --prune --prune-tags
   RUST_VERSION: "1.93"
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
   # Disable secrets filter in CI (testing secrets filter itself)
