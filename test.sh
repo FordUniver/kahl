@@ -47,6 +47,27 @@ test_flag() {
     echo
 }
 
+# Test that version output matches semver-like pattern
+test_version() {
+    local name="$1"
+    local flag="$2"
+
+    echo "=== $name ==="
+    local result
+    result=$(./"$KAHL" "$flag" 2>/dev/null) || result=""
+
+    if [[ "$result" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        printf "  pass (%s)\n" "$result"
+        ((PASS++)) || true
+    else
+        printf "  FAIL\n"
+        printf "    expected: semver pattern (X.Y.Z...)\n"
+        printf "    got:      %s\n" "$result"
+        ((FAIL++)) || true
+    fi
+    echo
+}
+
 # Test helper for error cases - flag should cause exit code != 0
 test_flag_error() {
     local name="$1"
@@ -130,8 +151,8 @@ test_exact() {
 #############################################
 
 # Test version flags output valid semver-like format
-test_flag "Version flag (--version)" "--version" "^[0-9]+\.[0-9]+\.[0-9]+"
-test_flag "Version flag (-v)" "-v" "^[0-9]+\.[0-9]+\.[0-9]+"
+test_version "Version flag (--version)" "--version"
+test_version "Version flag (-v)" "-v"
 
 #############################################
 # Unknown Flag Rejection
