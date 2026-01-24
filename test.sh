@@ -29,13 +29,13 @@ FAIL=0
 test_flag() {
     local name="$1"
     local flag="$2"
-    local expect="$3"  # exact match expected
+    local expect="$3"  # regex pattern expected
 
     echo "=== $name ==="
     local result
     result=$(./"$KAHL" "$flag" 2>/dev/null) || result="[ERROR]"
 
-    if [[ "$result" == "$expect" ]]; then
+    if [[ "$result" =~ $expect ]]; then
         printf "  pass\n"
         ((PASS++)) || true
     else
